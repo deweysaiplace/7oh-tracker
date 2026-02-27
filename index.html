@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>7-OH Tracker</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#121212">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- iOS meta tags & icons -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <link rel="apple-touch-icon" href="icon-192.png">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header / Daily Tally -->
+        <header class="header">
+            <h1 class="tally"><span id="daily-total">0</span><span class="mg-label">mg</span></h1>
+            <p class="subtitle">Consumed Today</p>
+        </header>
+
+        <!-- Main Tablet Area -->
+        <main class="tablet-area">
+            <div class="action-toggle">
+                <button id="mode-split" class="mode-btn active">Split Mode</button>
+                <button id="mode-consume" class="mode-btn">Consume Mode</button>
+            </div>
+            
+            <div id="tablet-container" class="tablet-container">
+                <!-- Tablet pieces will be rendered here via JS -->
+            </div>
+            
+            <button id="add-tablet-btn" class="primary-btn">Add Whole Tablet</button>
+        </main>
+
+        <!-- Settings / Controls -->
+        <div class="controls">
+            <div class="strength-selector">
+                <label>Total Strength Selection:</label>
+                <div class="segmented-control">
+                    <button class="strength-btn active" data-val="20">20mg</button>
+                    <button class="strength-btn" data-val="40">40mg</button>
+                    <button class="strength-btn" data-val="60">60mg</button>
+                    <button class="strength-btn" data-val="80">80mg</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Log -->
+        <section class="history-section">
+            <div class="history-header">
+                <h2>History Log</h2>
+                <button id="clear-history-btn" class="text-btn">Clear All</button>
+            </div>
+            <ul id="history-list" class="history-list">
+                <!-- History items injected here -->
+            </ul>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
