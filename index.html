@@ -1,68 +1,187 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>7-OH Tracker</title>
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>7-OH Taper Tracker</title>
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#121212">
-    <!-- Fonts -->
+    <meta name="theme-color" content="#09090b">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <!-- iOS meta tags & icons -->
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="icon-192.png">
 </head>
+
 <body>
     <div class="app-container">
-        <!-- Header / Daily Tally -->
+
+        <!-- Top Stats Row -->
         <header class="header">
-            <h1 class="tally"><span id="daily-total">0</span><span class="mg-label">mg</span></h1>
-            <p class="subtitle">Consumed Today</p>
+            <div class="stat-card">
+                <span class="stat-label">Daily Limit</span>
+                <div class="stat-value" id="daily-limit-display">100<span class="unit">mg</span></div>
+                <button id="edit-limit-btn" class="icon-btn" aria-label="Edit Daily Limit">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                    </svg>
+                </button>
+            </div>
+            <div class="stat-card timer-card">
+                <span class="stat-label">Since Last Dose</span>
+                <div class="stat-value" id="time-since">0h 0m</div>
+            </div>
         </header>
 
-        <!-- Main Tablet Area -->
-        <main class="tablet-area">
-            <div class="action-toggle">
-                <button id="mode-split" class="mode-btn active">Split Mode</button>
-                <button id="mode-consume" class="mode-btn">Consume Mode</button>
-            </div>
-            
-            <div id="tablet-container" class="tablet-container">
-                <!-- Tablet pieces will be rendered here via JS -->
-            </div>
-            
-            <button id="add-tablet-btn" class="primary-btn">Add Whole Tablet</button>
-        </main>
-
-        <!-- Settings / Controls -->
-        <div class="controls">
-            <div class="strength-selector">
-                <label>Total Strength Selection:</label>
-                <div class="segmented-control">
-                    <button class="strength-btn active" data-val="20">20mg</button>
-                    <button class="strength-btn" data-val="40">40mg</button>
-                    <button class="strength-btn" data-val="60">60mg</button>
-                    <button class="strength-btn" data-val="80">80mg</button>
+        <!-- Main Progress Ring -->
+        <main class="progress-section">
+            <div class="progress-ring-container">
+                <svg class="progress-ring" viewBox="0 0 120 120">
+                    <circle class="progress-ring-bg" cx="60" cy="60" r="54"></circle>
+                    <circle class="progress-ring-fill" cx="60" cy="60" r="54" id="progress-circle"></circle>
+                </svg>
+                <div class="progress-text">
+                    <div class="consumed-amount">
+                        <span id="daily-total">0</span><span class="unit">mg</span>
+                    </div>
+                    <div class="consumed-label">Consumed Today</div>
+                    <div class="remaining-badge" id="remaining-badge">
+                        <span id="remaining-amount">100</span>mg left
+                    </div>
                 </div>
             </div>
-        </div>
+        </main>
 
-        <!-- History Log -->
+        <!-- My Stash Section -->
+        <section class="stash-section">
+            <div class="section-header">
+                <h2 class="section-title">My Stash</h2>
+                <button id="edit-stash-btn" class="icon-btn-inline" aria-label="Edit Stash">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                    </svg>
+                </button>
+            </div>
+            <div class="stash-grid">
+                <div class="stash-card stash-mango">
+                    <div class="stash-name">Mango (15mg)</div>
+                    <div class="stash-count"><span id="stash-mango-val">25.0</span><span class="stash-unit">pills</span>
+                    </div>
+                </div>
+                <div class="stash-card stash-7oh">
+                    <div class="stash-name">7-OH (80mg)</div>
+                    <div class="stash-count"><span id="stash-7oh-val">45.0</span><span class="stash-unit">pills</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Log Actions -->
+        <section class="action-section">
+            <h2 class="section-title">Quick Log</h2>
+            <div class="quick-log-grid">
+                <button class="log-btn" data-amount="7.5" data-stash="mango">7.5<span class="btn-unit">mg</span><span
+                        class="btn-sub">Mango (1/2)</span></button>
+                <button class="log-btn" data-amount="15" data-stash="mango">15<span class="btn-unit">mg</span><span
+                        class="btn-sub">Mango (Whole)</span></button>
+                <button class="log-btn" data-amount="20" data-stash="sevenOh">20<span class="btn-unit">mg</span><span
+                        class="btn-sub">7-OH (1/4)</span></button>
+                <button class="log-btn log-custom-btn" id="custom-log-btn">Custom <svg width="12" height="12"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14" />
+                    </svg></button>
+            </div>
+        </section>
+
+        <!-- History & Chart -->
         <section class="history-section">
             <div class="history-header">
-                <h2>History Log</h2>
-                <button id="clear-history-btn" class="text-btn">Clear All</button>
+                <h2 class="section-title">Log History</h2>
+                <button id="clear-history-btn" class="text-danger-btn">Reset Day</button>
             </div>
-            <ul id="history-list" class="history-list">
-                <!-- History items injected here -->
-            </ul>
+            <div class="history-list-container">
+                <ul id="history-list" class="history-list">
+                    <!-- History items injected here -->
+                </ul>
+            </div>
         </section>
+
+    </div>
+
+    <!-- Modals -->
+    <div id="limit-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>Set Daily Limit</h3>
+            <p>Update your tapering goal to stay on track.</p>
+            <input type="number" id="limit-input" step="0.5" placeholder="e.g. 60">
+            <div class="modal-actions">
+                <button class="btn-cancel" id="close-limit-modal">Cancel</button>
+                <button class="btn-save" id="save-limit-btn">Save Goal</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="custom-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>Log Custom Amount</h3>
+            <p>Enter the exact mg dose consumed.</p>
+
+            <div class="stash-selector">
+                <label>
+                    <input type="radio" name="custom_stash_type" value="mango" checked>
+                    <span class="radio-btn">Mango (15mg)</span>
+                </label>
+                <label>
+                    <input type="radio" name="custom_stash_type" value="sevenOh">
+                    <span class="radio-btn">7-OH (80mg)</span>
+                </label>
+            </div>
+
+            <input type="number" id="custom-input" step="0.5" placeholder="e.g. 10.0">
+            <div class="modal-actions">
+                <button class="btn-cancel" id="close-custom-modal">Cancel</button>
+                <button class="btn-save" id="save-custom-btn">Log Dose</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="edit-stash-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>Update Inventory</h3>
+            <p>Manually adjust how many pills you have left.</p>
+
+            <div class="input-group">
+                <label>Mango (15mg) Pills</label>
+                <input type="number" id="edit-mango-input" step="0.1" placeholder="e.g. 25.0">
+            </div>
+            <div class="input-group">
+                <label>7-OH (80mg) Pills</label>
+                <input type="number" id="edit-7oh-input" step="0.1" placeholder="e.g. 45.0">
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-cancel" id="close-stash-modal">Cancel</button>
+                <button class="btn-save" id="save-stash-btn">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="reset-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>Reset Daily Tally?</h3>
+            <p>This will reset your "Consumed Today" to 0. This cannot be undone.</p>
+            <div class="modal-actions">
+                <button class="btn-cancel" id="close-reset-modal">Cancel</button>
+                <button class="btn-save" id="confirm-reset-btn" style="background: var(--danger-color);">Reset</button>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>
 </body>
+
 </html>

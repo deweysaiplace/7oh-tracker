@@ -1,4 +1,4 @@
-const CACHE_NAME = '7oh-tracker-v2';
+const CACHE_NAME = '7oh-tracker-v6';
 const urlsToCache = [
     '/',
     '/index.html',

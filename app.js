@@ -1,160 +1,185 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Application State
     let state = {
-        strength: 20, // mg total per whole tablet
+        dailyLimit: 30, // Default recommended starting limit
         dailyTally: 0,
-        mode: 'split', // 'split' or 'consume'
         currentDate: new Date().toISOString().split('T')[0],
-        tabletPieces: [] // Items inside: 'whole', 'half-left', 'half-right', 'fourth-top-left', 'fourth-bottom-left', 'fourth-top-right', 'fourth-bottom-right'
+        lastDoseTime: null, // ISO string
+        stash: {
+            mango: 25.0,
+            sevenOh: 45.0
+        }
     };
+
+    const CIRCLE_CIRCUMFERENCE = 339.29; // Based on r=54 in CSS
+    let timerInterval = null;
 
     // DOM Elements
-    const elements = {
+    const els = {
+        limitDisplay: document.getElementById('daily-limit-display'),
+        timeSince: document.getElementById('time-since'),
         totalEl: document.getElementById('daily-total'),
-        strengthBtns: document.querySelectorAll('.strength-btn'),
-        modeSplitBtn: document.getElementById('mode-split'),
-        modeConsumeBtn: document.getElementById('mode-consume'),
-        tabletContainer: document.getElementById('tablet-container'),
-        addTabletBtn: document.getElementById('add-tablet-btn'),
-        historyList: document.getElementById('history-list'),
-        clearHistoryBtn: document.getElementById('clear-history-btn')
+        remAmt: document.getElementById('remaining-amount'),
+        remBadge: document.getElementById('remaining-badge'),
+        progCircle: document.getElementById('progress-circle'),
+        histList: document.getElementById('history-list'),
+
+        // Buttons
+        editLimitBtn: document.getElementById('edit-limit-btn'),
+        logBtns: document.querySelectorAll('.log-btn:not(.log-custom-btn)'),
+        customBtn: document.getElementById('custom-log-btn'),
+        clearHistBtn: document.getElementById('clear-history-btn'),
+
+        // Modals
+        limitModal: document.getElementById('limit-modal'),
+        limitInput: document.getElementById('limit-input'),
+        closeLimitBtn: document.getElementById('close-limit-modal'),
+        saveLimitBtn: document.getElementById('save-limit-btn'),
+
+        customModal: document.getElementById('custom-modal'),
+        customInput: document.getElementById('custom-input'),
+        closeCustomBtn: document.getElementById('close-custom-modal'),
+        saveCustomBtn: document.getElementById('save-custom-btn'),
+
+        resetModal: document.getElementById('reset-modal'),
+        closeResetBtn: document.getElementById('close-reset-modal'),
+        confirmResetBtn: document.getElementById('confirm-reset-btn'),
+
+        // Stash Elements
+        stashMangoVal: document.getElementById('stash-mango-val'),
+        stash7ohVal: document.getElementById('stash-7oh-val'),
+        editStashBtn: document.getElementById('edit-stash-btn'),
+        stashModal: document.getElementById('edit-stash-modal'),
+        stashMangoInput: document.getElementById('edit-mango-input'),
+        stash7ohInput: document.getElementById('edit-7oh-input'),
+        closeStashBtn: document.getElementById('close-stash-modal'),
+        saveStashBtn: document.getElementById('save-stash-btn'),
     };
 
-    // Initialization
+    // --- Initialization ---
     loadData();
     updateUI();
+    startTimer();
 
-    // Event Listeners
-    elements.strengthBtns.forEach(btn => {
+    // --- Event Listeners ---
+    els.logBtns.forEach(btn => {
         btn.addEventListener('click', (e) => {
-            elements.strengthBtns.forEach(b => b.classList.remove('active'));
-            e.target.classList.add('active');
-            state.strength = parseInt(e.target.dataset.val);
-            saveData();
+            // Find closest log-btn in case click was on child element (span)
+            const el = e.target.closest('.log-btn');
+            const amt = parseFloat(el.dataset.amount);
+            const stashType = el.dataset.stash;
+            logDose(amt, stashType);
         });
     });
 
-    elements.modeSplitBtn.addEventListener('click', () => setMode('split'));
-    elements.modeConsumeBtn.addEventListener('click', () => setMode('consume'));
-
-    elements.addTabletBtn.addEventListener('click', () => {
-        if (state.tabletPieces.length === 0) {
-            state.tabletPieces = ['whole'];
-            renderTablet();
-            saveData();
-        }
+    els.clearHistBtn.addEventListener('click', () => {
+        els.resetModal.classList.remove('hidden');
     });
 
-    elements.clearHistoryBtn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to clear all history?')) {
-            localStorage.removeItem('7oh_history');
-            localStorage.removeItem('7oh_state');
-            state.dailyTally = 0;
-            state.tabletPieces = [];
-            state.mode = 'split';
-            saveData();
-            updateUI();
-        }
-    });
+    els.closeResetBtn.addEventListener('click', () => els.resetModal.classList.add('hidden'));
 
-    // Core Application Logic
-    function setMode(mode) {
-        state.mode = mode;
-        if (mode === 'split') {
-            elements.modeSplitBtn.classList.add('active');
-            elements.modeConsumeBtn.classList.remove('active');
-        } else {
-            elements.modeSplitBtn.classList.remove('active');
-            elements.modeConsumeBtn.classList.add('active');
-        }
+    els.confirmResetBtn.addEventListener('click', () => {
+        const todayLogs = getHistory().filter(h => h.date !== state.currentDate);
+        localStorage.setItem('7oh_history', JSON.stringify(todayLogs));
+        state.dailyTally = 0;
+        state.lastDoseTime = null;
         saveData();
-    }
+        updateUI();
+        updateTimerText();
+        els.resetModal.classList.add('hidden');
+    });
 
-    function renderTablet() {
-        elements.tabletContainer.innerHTML = '';
-        elements.addTabletBtn.disabled = state.tabletPieces.length > 0;
-
-        state.tabletPieces.forEach(piece => {
-            const div = document.createElement('div');
-            div.className = `tablet-piece tablet-${piece}`;
-            div.dataset.piece = piece;
-
-            div.addEventListener('click', () => handlePieceClick(piece, div));
-
-            elements.tabletContainer.appendChild(div);
-        });
-    }
-
-    function handlePieceClick(piece, element) {
-        if (state.mode === 'split') {
-            splitPiece(piece, element);
-        } else if (state.mode === 'consume') {
-            consumePiece(piece, element);
-        }
-    }
-
-    function splitPiece(piece, element) {
-        if (piece.startsWith('fourth')) {
-            // Cannot split a fourth any further. Automatically trigger consume logic instead to be helpful?
-            // Or just do nothing.
-            return;
-        }
-
-        element.classList.add('splitting');
-
-        setTimeout(() => {
-            state.tabletPieces = state.tabletPieces.filter(p => p !== piece);
-
-            if (piece === 'whole') {
-                state.tabletPieces.push('half-left', 'half-right');
-            } else if (piece === 'half-left') {
-                state.tabletPieces.push('fourth-top-left', 'fourth-bottom-left');
-            } else if (piece === 'half-right') {
-                state.tabletPieces.push('fourth-top-right', 'fourth-bottom-right');
-            }
-
-            saveData();
-            renderTablet();
-        }, 150); // Small delay to show the quick splitting animation
-    }
-
-    function consumePiece(piece, element) {
-        // Calculate mg to add based on current global strength setting.
-        // It's assumed the user sets total strength they purchased, and slices divide that.
-        let amount = 0;
-        if (piece === 'whole') amount = state.strength;
-        else if (piece.startsWith('half')) amount = state.strength / 2;
-        else if (piece.startsWith('fourth')) amount = state.strength / 4;
-
-        // Visual animation
-        element.classList.add('consuming');
-
-        setTimeout(() => {
-            state.tabletPieces = state.tabletPieces.filter(p => p !== piece);
-            state.dailyTally += amount;
-
-            // Add to history log
-            const history = getHistory();
-            history.push({
-                timestamp: new Date().toISOString(),
-                amount: amount
-            });
-            localStorage.setItem('7oh_history', JSON.stringify(history));
-
-            // Revert mode back to split if nothing is left to save steps
-            if (state.tabletPieces.length === 0 && state.mode === 'consume') {
-                setMode('split');
-            }
-
+    // Modals
+    els.editLimitBtn.addEventListener('click', () => {
+        els.limitInput.value = state.dailyLimit;
+        els.limitModal.classList.remove('hidden');
+    });
+    els.closeLimitBtn.addEventListener('click', () => els.limitModal.classList.add('hidden'));
+    els.saveLimitBtn.addEventListener('click', () => {
+        const val = parseFloat(els.limitInput.value);
+        if (val > 0) {
+            state.dailyLimit = val;
             saveData();
             updateUI();
-        }, 300); // Wait for consume animation
+            els.limitModal.classList.add('hidden');
+        }
+    });
+
+    els.customBtn.addEventListener('click', () => {
+        els.customInput.value = '';
+        els.customModal.classList.remove('hidden');
+        setTimeout(() => els.customInput.focus(), 100);
+    });
+    els.closeCustomBtn.addEventListener('click', () => els.customModal.classList.add('hidden'));
+    els.saveCustomBtn.addEventListener('click', () => {
+        const val = parseFloat(els.customInput.value);
+        const selectedStashInfo = document.querySelector('input[name="custom_stash_type"]:checked');
+        const stashType = selectedStashInfo ? selectedStashInfo.value : null;
+
+        if (val > 0) {
+            logDose(val, stashType);
+            els.customModal.classList.add('hidden');
+        }
+    });
+
+    els.editStashBtn.addEventListener('click', () => {
+        els.stashMangoInput.value = state.stash.mango;
+        els.stash7ohInput.value = state.stash.sevenOh;
+        els.stashModal.classList.remove('hidden');
+    });
+
+    els.closeStashBtn.addEventListener('click', () => els.stashModal.classList.add('hidden'));
+
+    els.saveStashBtn.addEventListener('click', () => {
+        const newMango = parseFloat(els.stashMangoInput.value);
+        const new7oh = parseFloat(els.stash7ohInput.value);
+
+        if (!isNaN(newMango) && newMango >= 0) state.stash.mango = newMango;
+        if (!isNaN(new7oh) && new7oh >= 0) state.stash.sevenOh = new7oh;
+
+        saveData();
+        updateUI();
+        els.stashModal.classList.add('hidden');
+    });
+
+    // --- Core Logic ---
+    function logDose(amount, stashType = null) {
+        // Haptic feedback if available (works on some mobile browsers)
+        if (navigator.vibrate) navigator.vibrate(50);
+
+        state.dailyTally += amount;
+
+        const now = new Date();
+        state.lastDoseTime = now.toISOString();
+
+        // Calculate stash deduction based on tablet mg sizes
+        if (stashType === 'mango') {
+            const pillsTaken = amount / 15.0; // Mango is 15mg per pill
+            state.stash.mango = Math.max(0, state.stash.mango - pillsTaken);
+        } else if (stashType === 'sevenOh') {
+            const pillsTaken = amount / 80.0; // 7-OH is 80mg per pill
+            state.stash.sevenOh = Math.max(0, state.stash.sevenOh - pillsTaken);
+        }
+
+        // Save history entry
+        const history = getHistory();
+        history.push({
+            id: Date.now(),
+            date: state.currentDate,
+            timestamp: now.toISOString(),
+            amount: amount,
+            stash: stashType
+        });
+        localStorage.setItem('7oh_history', JSON.stringify(history));
+
+        saveData();
+        updateUI();
+        updateTimerText();
     }
 
     function checkDayWrap() {
         const today = new Date().toISOString().split('T')[0];
         if (state.currentDate !== today) {
-            // New day detected. Reset tally.
             state.currentDate = today;
             state.dailyTally = 0;
             saveData();
@@ -162,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function loadData() {
-        const saved = localStorage.getItem('7oh_state');
+        const saved = localStorage.getItem('7oh_taper_state');
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
@@ -172,10 +197,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         checkDayWrap();
+
+        // Try to migrate data from the old app version if it exists
+        const oldState = localStorage.getItem('7oh_state');
+        if (oldState && !saved) {
+            try {
+                const parsed = JSON.parse(oldState);
+                if (parsed.currentDate === state.currentDate && parsed.dailyTally) {
+                    state.dailyTally = parsed.dailyTally;
+                }
+            } catch (e) { }
+        }
     }
 
     function saveData() {
-        localStorage.setItem('7oh_state', JSON.stringify(state));
+        localStorage.setItem('7oh_taper_state', JSON.stringify(state));
     }
 
     function getHistory() {
@@ -183,60 +219,108 @@ document.addEventListener('DOMContentLoaded', () => {
         return h ? JSON.parse(h) : [];
     }
 
+    // --- Timer Logic ---
+    function startTimer() {
+        updateTimerText();
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(updateTimerText, 60000); // UI updates every minute
+    }
+
+    function updateTimerText() {
+        if (!state.lastDoseTime) {
+            els.timeSince.textContent = "No data";
+            return;
+        }
+
+        const lastTime = new Date(state.lastDoseTime).getTime();
+        const now = new Date().getTime();
+        const diffMs = now - lastTime;
+
+        if (diffMs < 0) {
+            els.timeSince.textContent = "Just now";
+            return;
+        }
+
+        const hrs = Math.floor(diffMs / (1000 * 60 * 60));
+        const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+        if (hrs > 24) {
+            const days = Math.floor(hrs / 24);
+            els.timeSince.textContent = `${days}d ${hrs % 24}h`;
+        } else {
+            els.timeSince.textContent = `${hrs}h ${mins}m`;
+        }
+    }
+
+    // --- UI Rendering ---
     function updateUI() {
-        // Format daily tally
-        elements.totalEl.textContent = state.dailyTally % 1 === 0 ? state.dailyTally : state.dailyTally.toFixed(1);
+        // Format Tally
+        const formattedTally = state.dailyTally % 1 === 0 ? state.dailyTally : state.dailyTally.toFixed(1);
+        els.totalEl.textContent = formattedTally;
+        els.limitDisplay.innerHTML = `${state.dailyLimit}<span class="unit">mg</span>`;
 
-        // Sync strength buttons
-        elements.strengthBtns.forEach(btn => {
-            if (parseInt(btn.dataset.val) === state.strength) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-        });
+        // Update Stash UI
+        if (state.stash) {
+            els.stashMangoVal.textContent = state.stash.mango % 1 === 0 ? state.stash.mango : state.stash.mango.toFixed(2);
+            els.stash7ohVal.textContent = state.stash.sevenOh % 1 === 0 ? state.stash.sevenOh : state.stash.sevenOh.toFixed(2);
+        }
 
-        // Sync mode
-        setMode(state.mode);
+        // Calculate progress ring and values
+        const remaining = Math.max(0, state.dailyLimit - state.dailyTally);
+        els.remAmt.textContent = remaining % 1 === 0 ? remaining : remaining.toFixed(1);
 
-        // Render tablet pieces
-        renderTablet();
+        const percent = Math.min(100, Math.max(0, (state.dailyTally / state.dailyLimit) * 100));
+        const offset = CIRCLE_CIRCUMFERENCE - (percent / 100) * CIRCLE_CIRCUMFERENCE;
+        els.progCircle.style.strokeDashoffset = offset;
 
-        // Render history
-        const history = getHistory();
-        elements.historyList.innerHTML = '';
+        // Visual warnings based on progress
+        els.progCircle.classList.remove('ring-warning', 'ring-danger');
+        els.remBadge.classList.remove('badge-warning', 'badge-danger');
+
+        if (percent >= 100) {
+            els.progCircle.classList.add('ring-danger');
+            els.remBadge.classList.add('badge-danger');
+        } else if (percent >= 80) {
+            els.progCircle.classList.add('ring-warning');
+            els.remBadge.classList.add('badge-warning');
+        }
+
+        // Render History for Today
+        const history = getHistory().filter(h => h.date === state.currentDate);
+        els.histList.innerHTML = '';
+
         if (history.length === 0) {
-            elements.historyList.innerHTML = '<li class="history-item history-empty">No history logs yet</li>';
+            els.histList.innerHTML = '<li class="history-item history-empty">No doses logged today. Keep going!</li>';
         } else {
             [...history].reverse().forEach(entry => {
                 const li = document.createElement('li');
                 li.className = 'history-item';
 
                 const entryDate = new Date(entry.timestamp);
-                const isToday = entryDate.toDateString() === new Date().toDateString();
-
-                const timeOptions = { hour: 'numeric', minute: '2-digit' };
-                const dateOptions = { month: 'short', day: 'numeric' };
-
-                const timeString = entryDate.toLocaleTimeString(undefined, timeOptions);
-                const dateString = isToday ? 'Today' : entryDate.toLocaleDateString(undefined, dateOptions);
+                const timeStr = entryDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
                 const dateSpan = document.createElement('span');
-                dateSpan.className = 'history-date';
-                dateSpan.textContent = `${dateString} at ${timeString}`;
+                dateSpan.className = 'hist-time';
+                dateSpan.textContent = timeStr;
 
                 const amtSpan = document.createElement('span');
-                amtSpan.className = 'history-amount';
-                amtSpan.textContent = `+${entry.amount % 1 === 0 ? entry.amount : entry.amount.toFixed(1)} mg`;
+                amtSpan.className = 'hist-amt';
+
+                // Add tiny visual indicator of stash type to the history log
+                let stashLabel = '';
+                if (entry.stash === 'mango') stashLabel = '<span style="color:#f59e0b;font-size:0.75rem;margin-right:6px">Mango</span>';
+                if (entry.stash === 'sevenOh') stashLabel = '<span style="color:#8b5cf6;font-size:0.75rem;margin-right:6px">7-OH</span>';
+
+                amtSpan.innerHTML = `${stashLabel}+${entry.amount % 1 === 0 ? entry.amount : entry.amount.toFixed(1)} mg`;
 
                 li.appendChild(dateSpan);
                 li.appendChild(amtSpan);
-                elements.historyList.appendChild(li);
+                els.histList.appendChild(li);
             });
         }
     }
 
-    // Register Service Worker for offline PWA
+    // Register Service Worker mapping to Version 3 to ensure aggressive cache invalidation of the old UI
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('sw.js').catch(err => {
