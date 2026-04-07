@@ -14,7 +14,12 @@ document.addEventListener('DOMContentLoaded', () => {
             { label: '20', sub: '7-OH (1/4)', val: 20, type: 'sevenOh' },
             { label: '40', sub: '7-OH (1/2)', val: 40, type: 'sevenOh' },
             { label: '80', sub: '7-OH (Whole)', val: 80, type: 'sevenOh' }
-        ]
+        ],
+        settings: {
+            baselineMg: 30,
+            weeklyDropMg: 2.0,
+            taperStartDate: new Date().toISOString()
+        }
     };
 
     const COLOR_PALETTE = ['#3b82f6', '#10b981', '#ec4899', '#f43f5e', '#8b5cf6', '#eab308'];
@@ -31,11 +36,15 @@ document.addEventListener('DOMContentLoaded', () => {
         dashTimer: document.getElementById('dash-timer'),
         presetGrid: document.getElementById('preset-grid'),
         dynamicStashGrid: document.getElementById('dynamic-stash-grid'),
+        dashRingFill: document.getElementById('dash-ring-fill'),
+        dashLimitLabel: document.getElementById('dash-limit-label'),
 
         // Save Modal
         saveModal: document.getElementById('save-flow-modal'),
         saveMgInput: document.getElementById('save-mg-input'),
         dynamicSaveRadios: document.getElementById('dynamic-save-radios'),
+        reasonTags: document.querySelectorAll('.reason-tag'),
+        saveNoteInput: document.getElementById('save-note-input'),
         saveMoodInput: document.getElementById('save-mood-input'),
         saveTimestampDisplay: document.getElementById('save-timestamp-display'),
         btnCancelSave: document.getElementById('btn-cancel-save'),
@@ -61,6 +70,11 @@ document.addEventListener('DOMContentLoaded', () => {
         btnCloseStash: document.getElementById('close-stash-modal'),
         btnScanLabel: document.getElementById('btn-scan-label'),
         cameraInput: document.getElementById('camera-input'),
+        
+        // Taper Settings
+        settingBaseline: document.getElementById('setting-baseline'),
+        settingDrop: document.getElementById('setting-drop'),
+        btnSaveTaper: document.getElementById('btn-save-taper'),
 
         // Export/Wipe
         btnExport: document.getElementById('btn-export-csv'),
@@ -81,8 +95,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
-            try { state = JSON.parse(saved); } catch (e) { console.error("Corrupted save data."); }
+            try { 
+                const loaded = JSON.parse(saved); 
+                state = { ...state, ...loaded };
+                if (!state.settings) state.settings = { baselineMg: 30, weeklyDropMg: 2.0, taperStartDate: new Date().toISOString() };
+            } catch (e) { console.error("Corrupted save data."); }
         }
+
+        // Initialize Tag interactions
+        els.reasonTags.forEach(tag => {
+            tag.addEventListener('click', (e) => {
+                e.target.classList.toggle('selected');
+            });
+        });
+
+        // Initialize Settings Fields
+        els.settingBaseline.value = state.settings.baselineMg;
+        els.settingDrop.value = state.settings.weeklyDropMg;
+
+        els.btnSaveTaper.addEventListener('click', () => {
+            state.settings.baselineMg = parseFloat(els.settingBaseline.value) || 30;
+            state.settings.weeklyDropMg = parseFloat(els.settingDrop.value) || 0;
+            saveData();
+            alert("Taper goal updated!");
+            updateUI();
+        });
 
         buildPresets();
         updateUI();
@@ -191,7 +228,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (multiplier > 0) amountVal = baseSize * multiplier;
             }
 
-            openSaveModal(amountVal, productStr);
+            // 3. Identify Reason Tags visually
+            let foundTags = [];
+            document.querySelectorAll('.reason-tag').forEach(tag => {
+                if (speechResult.includes(tag.dataset.val.toLowerCase())) {
+                    foundTags.push(tag.dataset.val);
+                }
+            });
+
+            openSaveModal(amountVal, productStr, foundTags);
         };
 
         recognition.onspeechend = () => { recognition.stop(); els.headerTitle.textContent = "Dashboard"; };
@@ -200,11 +245,21 @@ document.addEventListener('DOMContentLoaded', () => {
         try { recognition.start(); } catch(e) {}
     }
 
-    function openSaveModal(amount, stashType) {
+    function openSaveModal(amount, stashType, autoTags = []) {
         if (navigator.vibrate) navigator.vibrate(50);
         els.saveMgInput.value = amount;
         els.saveMoodInput.value = 3; 
+        els.saveNoteInput.value = "";
         
+        // Reset tags and apply voice tags if exist
+        els.reasonTags.forEach(tag => {
+            if (autoTags.includes(tag.dataset.val)) {
+                tag.classList.add('selected');
+            } else {
+                tag.classList.remove('selected');
+            }
+        });
+
         // Auto select radio
         const radios = els.dynamicSaveRadios.querySelectorAll('input[type="radio"]');
         let matched = false;
@@ -243,6 +298,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedRadio = els.dynamicSaveRadios.querySelector('input[type="radio"]:checked');
         const stashType = selectedRadio ? selectedRadio.value : 'other';
         const mood = parseInt(els.saveMoodInput.value);
+        const note = els.saveNoteInput.value.trim();
+        
+        // Harvest selected reason tags
+        const selectedTags = [];
+        els.reasonTags.forEach(tag => {
+            if (tag.classList.contains('selected')) selectedTags.push(tag.dataset.val);
+        });
+
         const now = new Date();
 
         // Dynamic Stash Deduction Math
@@ -254,7 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        const entry = { id: Date.now(), timestamp: now.toISOString(), amount: amt, product: stashType, mood: mood };
+        const entry = { id: Date.now(), timestamp: now.toISOString(), amount: amt, product: stashType, mood: mood, tags: selectedTags, note: note };
         state.history.push(entry);
         saveData();
         
@@ -303,14 +366,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const moodEmoji = ['😖','😟','😐','🙂','😁'][entry.mood - 1] || '😐';
+            let tagHTML = '';
+            if (entry.tags && entry.tags.length > 0) {
+                tagHTML = `<div style="display:flex; gap:4px; flex-wrap:wrap; margin-top:8px;">` + 
+                          entry.tags.map(t => `<span style="font-size:0.7rem; background:${hexColor}20; color:${hexColor}; padding:2px 6px; border-radius:4px;">${t}</span>`).join('') +
+                          `</div>`;
+            }
+            let noteHTML = '';
+            if (entry.note) {
+                noteHTML = `<div style="font-size:0.8rem; color:var(--text-secondary); margin-top:8px; font-style:italic;">"${entry.note}"</div>`;
+            }
 
             li.innerHTML = `
                 <div class="entry-header">
-                    <span class="entry-time">${timeStr} &nbsp; <span style="font-size:1.1rem">${moodEmoji}</span></span>
-                    <span class="entry-amount">+${formatNum(entry.amount)}<span style="font-size:0.9rem;color:var(--text-secondary)">mg</span></span>
+                    <span class="entry-time">${timeStr} &nbsp; <span style="font-size:1.1rem; display:none;">${moodEmoji}</span></span>
+                    <span class="entry-amount">+${formatNum(entry.amount)}<span style="font-size:0.9rem; color:var(--text-secondary)">mg</span></span>
                 </div>
+                ${tagHTML}
+                ${noteHTML}
                 <div class="entry-footer">
-                    <span class="entry-product" style="background:${hexColor}20; color:${hexColor}">${prodLabel}</span>
+                    <span class="entry-product" style="font-size:0.75rem; font-weight:600;">${prodLabel}</span>
                     <button class="btn-delete-entry" data-id="${entry.id}">Delete</button>
                 </div>
             `;
@@ -330,6 +405,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    let timeChartInstance = null;
+
     // --- INSIGHTS ENGINE ---
     function calcInsights() {
         const now = new Date();
@@ -338,6 +415,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let totalToday = 0; let total7Days = 0; let countToday = 0;
         let todayTimestamps = []; let mgFrequencies = {};
+
+        // Heatmap Time Blocks: Morning(6a-12p), Afternoon(12p-6p), Evening(6p-12a), Night(12a-6a)
+        let timeBlocks = { 'Morning': 0, 'Afternoon': 0, 'Evening': 0, 'Night': 0 };
 
         state.history.forEach(entry => {
             const eDate = entry.timestamp.split('T')[0];
@@ -349,7 +429,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 todayTimestamps.push(new Date(entry.timestamp).getTime());
             }
 
-            if (entry.timestamp >= last7DaysStr) total7Days += entry.amount;
+            if (entry.timestamp >= last7DaysStr) {
+                total7Days += entry.amount;
+                
+                // Chart Logic
+                const hr = new Date(entry.timestamp).getHours();
+                if (hr >= 6 && hr < 12) timeBlocks['Morning'] += entry.amount;
+                else if (hr >= 12 && hr < 18) timeBlocks['Afternoon'] += entry.amount;
+                else if (hr >= 18 && hr < 24) timeBlocks['Evening'] += entry.amount;
+                else timeBlocks['Night'] += entry.amount;
+            }
         });
 
         els.ins7day.textContent = formatNum(total7Days);
@@ -380,6 +469,36 @@ document.addEventListener('DOMContentLoaded', () => {
             els.safetyBadge.classList.remove('hidden');
         } else {
             els.safetyBadge.classList.add('hidden');
+        }
+
+        // Draw Chart
+        if (typeof Chart !== 'undefined') {
+            const ctx = document.getElementById('timeChart').getContext('2d');
+            if (timeChartInstance) timeChartInstance.destroy();
+            
+            timeChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Morning', 'Afternoon', 'Evening', 'Night'],
+                    datasets: [{
+                        label: 'Mg Consumed (Last 7 Days)',
+                        data: [timeBlocks['Morning'], timeBlocks['Afternoon'], timeBlocks['Evening'], timeBlocks['Night']],
+                        backgroundColor: 'rgba(59, 130, 246, 0.4)',
+                        borderColor: '#3b82f6',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#a1a1aa' } },
+                        x: { grid: { display: false }, ticks: { color: '#a1a1aa' } }
+                    }
+                }
+            });
         }
     }
 
@@ -415,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
         lblOther.innerHTML = `<input type="radio" name="save_stash_type" value="other" checked><span class="radio-btn">Other</span>`;
         els.dynamicSaveRadios.appendChild(lblOther);
 
-        // Daily Tally
+        // Daily Tally & Progress Ring
         const nowStr = new Date().toISOString().split('T')[0];
         let dashTally = 0;
         state.history.forEach(h => {
@@ -423,6 +542,33 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         els.dashTotal.textContent = formatNum(dashTally);
         
+        // Progress Ring Math
+        const startD = new Date(state.settings.taperStartDate);
+        const nowD = new Date();
+        const diffTime = Math.abs(nowD - startD);
+        const weeksPassed = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+        
+        let currentLimit = state.settings.baselineMg - (weeksPassed * state.settings.weeklyDropMg);
+        if (currentLimit < 0) currentLimit = 0;
+        
+        els.dashLimitLabel.textContent = `Goal Limit: ${formatNum(currentLimit)}mg`;
+
+        if (currentLimit > 0) {
+            let percentage = (dashTally / currentLimit);
+            if (percentage > 1.0) percentage = 1.0;
+            const circumference = 52 * 2 * Math.PI; // r=52
+            const offset = circumference - (percentage * circumference);
+            els.dashRingFill.style.strokeDashoffset = offset;
+
+            if (dashTally > currentLimit) {
+                els.dashRingFill.classList.add('over-limit');
+            } else {
+                els.dashRingFill.classList.remove('over-limit');
+            }
+        } else {
+            els.dashRingFill.style.strokeDashoffset = 0;
+        }
+
         calcInsights();
     }
 
