@@ -1,9 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
     
     // --- APP STATE ---
-    const STORAGE_KEY = 'dose_tracker_v2_data';
+    const STORAGE_KEY = 'dose_tracker_v3_data';
     let state = {
-        stash: { mango: 25.0, sevenOh: 45.0 },
+        inventory: [
+            { id: 'mango', name: 'Mango', sizeMg: 15.0, count: 25.0, color: '#f59e0b' },
+            { id: 'sevenOh', name: '7-OH', sizeMg: 80.0, count: 45.0, color: '#8b5cf6' }
+        ],
         history: [], // Array of entry objects
         presets: [
             { label: '7.5', sub: 'Mango (1/2)', val: 7.5, type: 'mango' },
@@ -13,6 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
             { label: '80', sub: '7-OH (Whole)', val: 80, type: 'sevenOh' }
         ]
     };
+
+    const COLOR_PALETTE = ['#3b82f6', '#10b981', '#ec4899', '#f43f5e', '#8b5cf6', '#eab308'];
 
     // --- DOM ELEMENTS ---
     const els = {
@@ -25,13 +30,12 @@ document.addEventListener('DOMContentLoaded', () => {
         dashTotal: document.getElementById('dash-total'),
         dashTimer: document.getElementById('dash-timer'),
         presetGrid: document.getElementById('preset-grid'),
-        stashMangoVal: document.getElementById('stash-mango-val'),
-        stash7ohVal: document.getElementById('stash-7oh-val'),
+        dynamicStashGrid: document.getElementById('dynamic-stash-grid'),
 
         // Save Modal
         saveModal: document.getElementById('save-flow-modal'),
         saveMgInput: document.getElementById('save-mg-input'),
-        saveStashRadios: document.getElementsByName('save_stash_type'),
+        dynamicSaveRadios: document.getElementById('dynamic-save-radios'),
         saveMoodInput: document.getElementById('save-mood-input'),
         saveTimestampDisplay: document.getElementById('save-timestamp-display'),
         btnCancelSave: document.getElementById('btn-cancel-save'),
@@ -49,10 +53,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Settings / Edit Stash
         btnOpenEditStash: document.getElementById('open-edit-stash'),
         editStashModal: document.getElementById('edit-stash-modal'),
-        editMangoInput: document.getElementById('edit-mango-input'),
-        edit7ohInput: document.getElementById('edit-7oh-input'),
+        inventoryListContainer: document.getElementById('inventory-list-container'),
+        newProdName: document.getElementById('new-prod-name'),
+        newProdMg: document.getElementById('new-prod-mg'),
+        newProdCount: document.getElementById('new-prod-count'),
+        btnAddProduct: document.getElementById('btn-add-product'),
         btnCloseStash: document.getElementById('close-stash-modal'),
-        btnSaveStash: document.getElementById('save-stash-btn'),
 
         // Export/Wipe
         btnExport: document.getElementById('btn-export-csv'),
@@ -64,8 +70,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- INITIALIZATION ---
     function init() {
-        // V2 Wipe Protection: Check if old schema exists and clean it up
-        if (localStorage.getItem('7oh_history') || localStorage.getItem('7oh_taper_state')) {
+        // V3 Wipe Protection
+        if (localStorage.getItem('dose_tracker_v2_data') || localStorage.getItem('7oh_history')) {
+            localStorage.removeItem('dose_tracker_v2_data');
             localStorage.removeItem('7oh_history');
             localStorage.removeItem('7oh_taper_state');
         }
@@ -116,14 +123,12 @@ document.addEventListener('DOMContentLoaded', () => {
             els.presetGrid.appendChild(btn);
         });
 
-        // Add Custom Button
         const customBtn = document.createElement('div');
         customBtn.className = 'preset-btn custom-btn';
         customBtn.innerHTML = `<span class="preset-val">+</span><span class="preset-lbl">Custom</span>`;
         customBtn.addEventListener('click', () => openSaveModal('', 'other'));
         els.presetGrid.appendChild(customBtn);
 
-        // Add Voice Button
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (SpeechRecognition) {
             const voiceBtn = document.createElement('div');
@@ -144,84 +149,84 @@ document.addEventListener('DOMContentLoaded', () => {
         recognition.interimResults = false;
         recognition.maxAlternatives = 1;
 
-        // Visual feedback
         els.headerTitle.textContent = "🎙️ Listening...";
 
         recognition.onresult = (event) => {
             const speechResult = event.results[0][0].transcript.toLowerCase();
             els.headerTitle.textContent = "Dashboard";
             
-            // Default assumes other
             let productStr = 'other';
             let amountVal = '';
+            let baseSize = 80;
             
-            // 1. Identify Product
-            if (speechResult.includes('mango')) {
-                productStr = 'mango';
-            } else if (speechResult.match(/7[-\s]?oh/) || speechResult.match(/seven[-\s]?oh/) || speechResult.includes('tab')) {
-                productStr = 'sevenOh';
+            // 1. Dynamic Product Matching
+            let foundMatch = false;
+            for (const item of state.inventory) {
+                if (speechResult.includes(item.name.toLowerCase())) {
+                    productStr = item.id;
+                    baseSize = item.sizeMg;
+                    foundMatch = true;
+                    break;
+                }
+            }
+            
+            // Fallbacks
+            if (!foundMatch) {
+                if (speechResult.includes('mango')) { productStr = 'mango'; baseSize = 15; }
+                else if (speechResult.match(/7[-\s]?oh/) || speechResult.match(/seven[-\s]?oh/) || speechResult.includes('tab')) { productStr = 'sevenOh'; baseSize = 80; }
             }
 
             // 2. Identify Amount
-            // Look for explicit milligrams first e.g. "ten milligrams"
             const mgMatch = speechResult.match(/(\d+(\.\d+)?)\s*(mg|milligram)/);
             if (mgMatch) {
                 amountVal = parseFloat(mgMatch[1]);
             } else {
-                // Look for fractions relative to the product 
-                // Base size logic: Mango=15mg, 7OH=80mg
-                let baseSize = 80; // defaults to 7OH tab size if unknown
-                if (productStr === 'mango') baseSize = 15;
-                if (productStr === 'sevenOh') baseSize = 80;
-
                 let multiplier = 0;
                 if (speechResult.match(/quarter|1\/4/)) multiplier = 0.25;
                 if (speechResult.match(/half|1\/2/)) multiplier = 0.5;
                 if (speechResult.match(/whole|full/)) multiplier = 1.0;
 
-                if (multiplier > 0) {
-                    amountVal = baseSize * multiplier;
-                }
+                if (multiplier > 0) amountVal = baseSize * multiplier;
             }
 
-            // Open the save modal with pre-filled translated data
             openSaveModal(amountVal, productStr);
         };
 
-        recognition.onspeechend = () => {
-            recognition.stop();
-            els.headerTitle.textContent = "Dashboard";
-        };
+        recognition.onspeechend = () => { recognition.stop(); els.headerTitle.textContent = "Dashboard"; };
+        recognition.onerror = (event) => { console.error(event); els.headerTitle.textContent = "Dashboard"; alert("Error: " + event.error); };
 
-        recognition.onerror = (event) => {
-            console.error(event.error);
-            els.headerTitle.textContent = "Dashboard";
-            alert("Error recognizing voice: " + event.error);
-        };
-
-        try {
-            recognition.start();
-        } catch(e) { /* already started */ }
+        try { recognition.start(); } catch(e) {}
     }
 
     function openSaveModal(amount, stashType) {
         if (navigator.vibrate) navigator.vibrate(50);
         els.saveMgInput.value = amount;
-        els.saveMoodInput.value = 3; // Reset default
+        els.saveMoodInput.value = 3; 
         
         // Auto select radio
-        Array.from(els.saveStashRadios).forEach(radio => {
-            radio.checked = (radio.value === stashType);
+        const radios = els.dynamicSaveRadios.querySelectorAll('input[type="radio"]');
+        let matched = false;
+        radios.forEach(radio => {
+            if(radio.value === stashType){
+                radio.checked = true;
+                matched = true;
+            } else {
+                radio.checked = false;
+            }
         });
+        
+        // Fallback to 'other'
+        if(!matched) {
+            const otherRadio = els.dynamicSaveRadios.querySelector('input[value="other"]');
+            if(otherRadio) otherRadio.checked = true;
+        }
 
         const now = new Date();
         const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         els.saveTimestampDisplay.textContent = `Today @ ${timeStr}`;
 
         els.saveModal.classList.remove('hidden');
-        if (amount === '') {
-            setTimeout(() => els.saveMgInput.focus(), 100);
-        }
+        if (amount === '') setTimeout(() => els.saveMgInput.focus(), 100);
     }
 
     els.btnCancelSave.addEventListener('click', () => els.saveModal.classList.add('hidden'));
@@ -229,36 +234,31 @@ document.addEventListener('DOMContentLoaded', () => {
     els.btnConfirmSave.addEventListener('click', () => {
         const amtStr = els.saveMgInput.value;
         if (!amtStr || isNaN(amtStr) || parseFloat(amtStr) <= 0) {
-            alert("Please enter a valid amount.");
-            return;
+            return alert("Please enter a valid amount.");
         }
 
         const amt = parseFloat(amtStr);
-        const selectedRadio = Array.from(els.saveStashRadios).find(r => r.checked);
+        const selectedRadio = els.dynamicSaveRadios.querySelector('input[type="radio"]:checked');
         const stashType = selectedRadio ? selectedRadio.value : 'other';
         const mood = parseInt(els.saveMoodInput.value);
-
         const now = new Date();
 
-        // Stash Deduction Math
-        if (stashType === 'mango') state.stash.mango = Math.max(0, state.stash.mango - (amt / 15.0));
-        if (stashType === 'sevenOh') state.stash.sevenOh = Math.max(0, state.stash.sevenOh - (amt / 80.0));
+        // Dynamic Stash Deduction Math
+        if (stashType !== 'other') {
+            const invIndex = state.inventory.findIndex(inv => inv.id === stashType);
+            if (invIndex >= 0) {
+                const pillsTaken = amt / state.inventory[invIndex].sizeMg;
+                state.inventory[invIndex].count = Math.max(0, state.inventory[invIndex].count - pillsTaken);
+            }
+        }
 
-        // Create log entry
-        const entry = {
-            id: Date.now(),
-            timestamp: now.toISOString(),
-            amount: amt,
-            product: stashType,
-            mood: mood
-        };
-
+        const entry = { id: Date.now(), timestamp: now.toISOString(), amount: amt, product: stashType, mood: mood };
         state.history.push(entry);
         saveData();
         
         els.saveModal.classList.add('hidden');
         updateUI();
-        startTimer(); // Reset timer instantly
+        startTimer(); 
     });
 
     // --- TIMELINE ---
@@ -269,9 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Clone and reverse so newest is on top
         const reversed = [...state.history].reverse();
-        
         let lastDateLabel = "";
 
         reversed.forEach(entry => {
@@ -279,14 +277,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const dateStr = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
             const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
             
-            // Insert Date Dividers
             if (dateStr !== lastDateLabel) {
                 const divider = document.createElement('div');
-                divider.style.fontSize = "0.8rem";
-                divider.style.color = "var(--text-secondary)";
-                divider.style.fontWeight = "600";
-                divider.style.marginTop = "10px";
-                divider.style.textTransform = "uppercase";
+                divider.style.fontSize = "0.8rem"; divider.style.color = "var(--text-secondary)";
+                divider.style.fontWeight = "600"; divider.style.marginTop = "10px"; divider.style.textTransform = "uppercase";
                 divider.textContent = dateStr;
                 els.timelineList.appendChild(divider);
                 lastDateLabel = dateStr;
@@ -295,10 +289,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const li = document.createElement('li');
             li.className = 'entry-card';
 
-            const prodLabel = entry.product === 'mango' ? 'Mango (15mg)' : entry.product === 'sevenOh' ? '7-OH (80mg)' : 'Other';
-            const prodClass = entry.product === 'mango' ? 'prod-mango' : entry.product === 'sevenOh' ? 'prod-7oh' : 'prod-other';
+            // Find Product Info dynamically
+            let prodLabel = 'Other';
+            let hexColor = '#ffffff';
+            if (entry.product !== 'other') {
+                const invItem = state.inventory.find(i => i.id === entry.product);
+                if (invItem) {
+                    prodLabel = invItem.name;
+                    hexColor = invItem.color;
+                }
+            }
 
-            // Smiley parsing
             const moodEmoji = ['😖','😟','😐','🙂','😁'][entry.mood - 1] || '😐';
 
             li.innerHTML = `
@@ -307,22 +308,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="entry-amount">+${formatNum(entry.amount)}<span style="font-size:0.9rem;color:var(--text-secondary)">mg</span></span>
                 </div>
                 <div class="entry-footer">
-                    <span class="entry-product ${prodClass}">${prodLabel}</span>
+                    <span class="entry-product" style="background:${hexColor}20; color:${hexColor}">${prodLabel}</span>
                     <button class="btn-delete-entry" data-id="${entry.id}">Delete</button>
                 </div>
             `;
             els.timelineList.appendChild(li);
         });
 
-        // Bind deletes
         document.querySelectorAll('.btn-delete-entry').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 if (confirm("Delete this entry entirely?")) {
                     const id = parseInt(e.target.dataset.id);
                     state.history = state.history.filter(h => h.id !== id);
                     saveData();
-                    renderTimeline(); // re-render
-                    updateUI(); // re-calc dash
+                    renderTimeline(); 
+                    updateUI(); 
                 }
             });
         });
@@ -334,16 +334,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const todayStr = now.toISOString().split('T')[0];
         const last7DaysStr = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-        let totalToday = 0;
-        let total7Days = 0;
-        let countToday = 0;
-        let todayTimestamps = [];
-        let mgFrequencies = {};
+        let totalToday = 0; let total7Days = 0; let countToday = 0;
+        let todayTimestamps = []; let mgFrequencies = {};
 
         state.history.forEach(entry => {
             const eDate = entry.timestamp.split('T')[0];
-            
-            // Mode calc
             mgFrequencies[entry.amount] = (mgFrequencies[entry.amount] || 0) + 1;
 
             if (eDate === todayStr) {
@@ -352,32 +347,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 todayTimestamps.push(new Date(entry.timestamp).getTime());
             }
 
-            if (entry.timestamp >= last7DaysStr) {
-                total7Days += entry.amount;
-            }
+            if (entry.timestamp >= last7DaysStr) total7Days += entry.amount;
         });
 
-        // 7 Day and Avg
         els.ins7day.textContent = formatNum(total7Days);
         els.insAvg.textContent = formatNum(total7Days / 7.0);
 
-        // Gap calculation
         if (todayTimestamps.length > 1) {
-            // Sort ascending
             todayTimestamps.sort((a,b) => a-b);
             let diffSum = 0;
             for(let i=1; i<todayTimestamps.length; i++){
                 diffSum += (todayTimestamps[i] - todayTimestamps[i-1]);
             }
-            const avgDiff = diffSum / (todayTimestamps.length - 1);
-            els.insGap.textContent = formatDuration(avgDiff);
+            els.insGap.textContent = formatDuration(diffSum / (todayTimestamps.length - 1));
         } else {
             els.insGap.textContent = "N/A";
         }
 
-        // Mode calculation
-        let modeMg = 0;
-        let maxCount = 0;
+        let modeMg = 0; let maxCount = 0;
         for (const amt in mgFrequencies) {
             if (mgFrequencies[amt] > maxCount) {
                 maxCount = mgFrequencies[amt];
@@ -386,7 +373,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         els.insCommon.textContent = modeMg;
 
-        // Safety Warnings on Header
         if (totalToday > (total7Days / 7.0) && countToday > 1) {
             els.safetyBadge.textContent = "Trending High";
             els.safetyBadge.classList.remove('hidden');
@@ -397,11 +383,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- UI RENDERING & TIMERS ---
     function updateUI() {
-        if (!state.stash) state.stash = {mango:0, sevenOh:0};
-        
-        els.stashMangoVal.textContent = formatNum(state.stash.mango);
-        els.stash7ohVal.textContent = formatNum(state.stash.sevenOh);
+        // Render Dynamic Stash Grid
+        els.dynamicStashGrid.innerHTML = '';
+        state.inventory.forEach(inv => {
+            const box = document.createElement('div');
+            box.className = 'stash-box';
+            box.style.borderBottom = `3px solid ${inv.color}`;
+            box.innerHTML = `
+                <span class="stash-name">${inv.name} (${inv.sizeMg}mg)</span>
+                <span class="stash-count">${formatNum(inv.count)} <span style="font-size:0.85rem; font-weight:500; color:var(--text-secondary)">pills</span></span>
+            `;
+            els.dynamicStashGrid.appendChild(box);
+        });
 
+        // Render Dynamic Save Radios
+        els.dynamicSaveRadios.innerHTML = '';
+        state.inventory.forEach(inv => {
+            const lbl = document.createElement('label');
+            lbl.style.minWidth = '45%';
+            lbl.innerHTML = `
+                <input type="radio" name="save_stash_type" value="${inv.id}">
+                <span class="radio-btn">${inv.name} (${inv.sizeMg}mg)</span>
+            `;
+            els.dynamicSaveRadios.appendChild(lbl);
+        });
+        // Add "Other" radio
+        const lblOther = document.createElement('label');
+        lblOther.style.minWidth = '45%';
+        lblOther.innerHTML = `<input type="radio" name="save_stash_type" value="other" checked><span class="radio-btn">Other</span>`;
+        els.dynamicSaveRadios.appendChild(lblOther);
+
+        // Daily Tally
         const nowStr = new Date().toISOString().split('T')[0];
         let dashTally = 0;
         state.history.forEach(h => {
@@ -409,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         els.dashTotal.textContent = formatNum(dashTally);
         
-        calcInsights(); // silent compute for safety badge
+        calcInsights();
     }
 
     function startTimer() {
@@ -419,71 +431,119 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateTimerText() {
-        if (state.history.length === 0) {
-            els.dashTimer.textContent = "No data";
-            return;
-        }
-
-        // Get very last entry time
+        if (state.history.length === 0) { els.dashTimer.textContent = "No data"; return; }
         const lastTime = new Date(state.history[state.history.length - 1].timestamp).getTime();
-        const diffMs = new Date().getTime() - lastTime;
-        
-        els.dashTimer.textContent = formatDuration(diffMs);
+        els.dashTimer.textContent = formatDuration(new Date().getTime() - lastTime);
     }
 
-    // --- SETTINGS / MODALS ---
+    // --- INVENTORY MANAGER (SETTINGS) ---
     els.btnOpenEditStash.addEventListener('click', () => {
-        els.editMangoInput.value = formatNum(state.stash.mango);
-        els.edit7ohInput.value = formatNum(state.stash.sevenOh);
+        renderInventoryManager();
         els.editStashModal.classList.remove('hidden');
     });
 
-    els.btnCloseStash.addEventListener('click', () => els.editStashModal.classList.add('hidden'));
-
-    els.btnSaveStash.addEventListener('click', () => {
-        const nm = parseFloat(els.editMangoInput.value);
-        const ns = parseFloat(els.edit7ohInput.value);
-        if (!isNaN(nm) && nm >= 0) state.stash.mango = nm;
-        if (!isNaN(ns) && ns >= 0) state.stash.sevenOh = ns;
+    els.btnCloseStash.addEventListener('click', () => {
         saveData();
         updateUI();
         els.editStashModal.classList.add('hidden');
     });
 
+    function renderInventoryManager() {
+        els.inventoryListContainer.innerHTML = '';
+        if (state.inventory.length === 0) els.inventoryListContainer.innerHTML = '<p style="color:var(--text-secondary); font-size:0.9rem;">No products configured.</p>';
+        
+        state.inventory.forEach((inv, index) => {
+            const row = document.createElement('div');
+            row.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:12px; margin-bottom:8px; border-radius:12px; border:1px solid var(--surface-border); box-sizing:border-box;";
+            
+            row.innerHTML = `
+                <div>
+                    <div style="font-weight:600; color:${inv.color}; font-size:0.9rem;">${inv.name}</div>
+                    <div style="font-size:0.75rem; color:var(--text-secondary);">${inv.sizeMg}mg per pill</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="number" class="live-inv-input" data-index="${index}" value="${formatNum(inv.count)}" style="width:70px; background:var(--bg-color); border:1px solid var(--surface-border); border-radius:8px; padding:8px; color:white; font-family:'Outfit'; text-align:center;">
+                    <button class="btn-del-inv" data-index="${index}" style="background:transparent; border:none; color:var(--danger-color); cursor:pointer; font-weight:bold; font-size:1.2rem; padding:4px;">&times;</button>
+                </div>
+            `;
+            els.inventoryListContainer.appendChild(row);
+        });
+
+        // Bind live live inputs
+        document.querySelectorAll('.live-inv-input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const idx = parseInt(e.target.dataset.index);
+                const val = parseFloat(e.target.value);
+                if(!isNaN(val) && val >= 0) {
+                    state.inventory[idx].count = val;
+                }
+            });
+        });
+
+        // Bind delete buttons
+        document.querySelectorAll('.btn-del-inv').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if(confirm("Remove this product type completely?")) {
+                    const idx = parseInt(e.target.dataset.index);
+                    state.inventory.splice(idx, 1);
+                    renderInventoryManager(); // re-render list
+                }
+            });
+        });
+    }
+
+    els.btnAddProduct.addEventListener('click', () => {
+        const name = els.newProdName.value.trim();
+        const mg = parseFloat(els.newProdMg.value);
+        const count = parseFloat(els.newProdCount.value);
+
+        if (!name || isNaN(mg) || mg <= 0 || isNaN(count) || count < 0) {
+            return alert("Please provide a valid name, size in mg, and starting count.");
+        }
+
+        const idStr = name.replace(/\s+/g, '').toLowerCase() + Date.now();
+        const randomColor = COLOR_PALETTE[state.inventory.length % COLOR_PALETTE.length];
+
+        state.inventory.push({
+            id: idStr,
+            name: name,
+            sizeMg: mg,
+            count: count,
+            color: randomColor
+        });
+
+        // Reset fields
+        els.newProdName.value = '';
+        els.newProdMg.value = '';
+        els.newProdCount.value = '';
+        
+        renderInventoryManager(); 
+    });
+
+    // --- SYSTEM EXPORT/WIPE ---
     els.btnExport.addEventListener('click', () => {
         if (state.history.length === 0) return alert("Nothing to export yet.");
-        let csv = "Date,Time,Amount_mg,Product,Mood_1_to_5\n";
+        let csv = "Date,Time,Amount_mg,ProductID,Mood_1_to_5\n";
         state.history.forEach(h => {
             const d = new Date(h.timestamp);
-            const dStr = d.toLocaleDateString();
-            const tStr = d.toLocaleTimeString();
-            csv += `"${dStr}","${tStr}",${h.amount},"${h.product}",${h.mood}\n`;
+            csv += `"${d.toLocaleDateString()}","${d.toLocaleTimeString()}",${h.amount},"${h.product}",${h.mood}\n`;
         });
         
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = `dose_tracker_export_${new Date().getTime()}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
+        a.href = url; a.download = `dose_tracker_export_${new Date().getTime()}.csv`;
+        document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url);
     });
 
     els.btnForceUpdate.addEventListener('click', () => {
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                for(let registration of registrations) {
-                    registration.unregister();
-                }
-            });
-        }
-        alert("Cache cleared. The app will now reload.");
+        if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
+        alert("Cache cleared. App will reload.");
         window.location.reload(true);
     });
 
     els.btnWipe.addEventListener('click', () => {
-        if(confirm("CRITICAL WARNING: This will delete ALL history and stash counts permanently. Are you absolutely sure?")) {
+        if(confirm("CRITICAL WARNING: This completely wipes ALL logs and inventory settings. Are you absolutely sure?")) {
             localStorage.removeItem(STORAGE_KEY);
             alert("App Factory Reset Complete. Refreshing...");
             window.location.reload();
@@ -491,28 +551,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- UTILS ---
-    function formatNum(n) {
-        return n % 1 === 0 ? n : parseFloat(n).toFixed(2);
-    }
-
+    function formatNum(n) { return n % 1 === 0 ? n : parseFloat(n).toFixed(2); }
     function formatDuration(ms) {
         if (ms < 60000) return "Just now";
         const hrs = Math.floor(ms / (1000 * 60 * 60));
         const mins = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-        
-        if (hrs > 24) {
-             const days = Math.floor(hrs / 24);
-             return `${days}d ${hrs % 24}h`;
-        }
+        if (hrs > 24) return `${Math.floor(hrs / 24)}d ${hrs % 24}h`;
         return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
     }
 
     init();
 
-    // Register Service Worker map
     if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('sw.js');
-        });
+        window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
     }
 });

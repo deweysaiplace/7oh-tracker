@@ -45,15 +45,8 @@
                 <!-- Stash Inventory -->
                 <div class="stash-container">
                     <h3 class="section-subtitle">My Stash</h3>
-                    <div class="stash-grid">
-                        <div class="stash-box stash-mango">
-                            <span class="stash-name">Mango (15mg)</span>
-                            <span class="stash-count"><span id="stash-mango-val">25</span> pills</span>
-                        </div>
-                        <div class="stash-box stash-7oh">
-                            <span class="stash-name">7-OH (80mg)</span>
-                            <span class="stash-count"><span id="stash-7oh-val">45</span> pills</span>
-                        </div>
+                    <div id="dynamic-stash-grid" class="stash-grid">
+                        <!-- Rendered by JS -->
                     </div>
                 </div>
 
@@ -100,7 +93,7 @@
             <section id="view-settings" class="view-section">
                 <div class="settings-group">
                     <h3 class="section-subtitle">Inventory Management</h3>
-                    <button class="settings-btn" id="open-edit-stash">Update Pill Stash</button>
+                    <button class="settings-btn" id="open-edit-stash">Manage Products & Stash</button>
                 </div>
 
                 <div class="settings-group">
@@ -153,20 +146,9 @@
             </div>
 
             <div class="input-group">
-                <label>Product / Stash</label>
-                <div class="stash-selector">
-                    <label>
-                        <input type="radio" name="save_stash_type" value="mango">
-                        <span class="radio-btn">Mango (15mg)</span>
-                    </label>
-                    <label>
-                        <input type="radio" name="save_stash_type" value="sevenOh">
-                        <span class="radio-btn">7-OH (80mg)</span>
-                    </label>
-                    <label>
-                        <input type="radio" name="save_stash_type" value="other" checked>
-                        <span class="radio-btn">Other</span>
-                    </label>
+                <label>Product / Type</label>
+                <div id="dynamic-save-radios" class="stash-selector" style="flex-wrap: wrap;">
+                    <!-- Rendered by JS -->
                 </div>
             </div>
 
@@ -185,24 +167,38 @@
         </div>
     </div>
 
-    <!-- Edit Stash Modal -->
+    <!-- Inventory Manager Modal -->
     <div id="edit-stash-modal" class="modal-overlay hidden">
         <div class="modal">
-            <h3>Update Inventory</h3>
-            <p>Manually adjust how many pills you have left.</p>
+            <h3 style="margin-bottom:16px;">Manage Products</h3>
             
-            <div class="input-group">
-                <label>Mango (15mg) Pills</label>
-                <input type="number" id="edit-mango-input" step="0.1">
+            <!-- List of existing products to edit their quantities -->
+            <div id="inventory-list-container" style="max-height: 40vh; overflow-y: auto; margin-bottom: 20px;">
+                <!-- Managed by JS -->
             </div>
-            <div class="input-group">
-                <label>7-OH (80mg) Pills</label>
-                <input type="number" id="edit-7oh-input" step="0.1">
+
+            <!-- Form to Add New Product -->
+            <div style="background: rgba(255,255,255,0.05); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                <h4 style="font-size: 0.9rem; margin-bottom: 8px; color: var(--primary-color);">+ Add New Product Type</h4>
+                <div class="input-group" style="margin-bottom: 8px;">
+                    <label>Product Name</label>
+                    <input type="text" id="new-prod-name" placeholder="e.g. Green Vein">
+                </div>
+                <div style="display:flex; gap:12px;">
+                    <div class="input-group" style="margin-bottom:0;">
+                        <label>Size (mg)</label>
+                        <input type="number" id="new-prod-mg" placeholder="15">
+                    </div>
+                    <div class="input-group" style="margin-bottom:0;">
+                        <label>Have (Pills)</label>
+                        <input type="number" id="new-prod-count" placeholder="10">
+                    </div>
+                </div>
+                <button class="settings-btn" style="margin-top:12px; background:var(--primary-color); border:none; text-align:center;" id="btn-add-product">Add Product</button>
             </div>
 
             <div class="modal-actions">
-                <button class="btn-cancel" id="close-stash-modal">Cancel</button>
-                <button class="btn-save" id="save-stash-btn">Save</button>
+                <button class="btn-cancel" id="close-stash-modal">Done</button>
             </div>
         </div>
     </div>

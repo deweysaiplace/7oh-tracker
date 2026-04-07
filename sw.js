@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dose-tracker-v8';
+const CACHE_NAME = 'dose-tracker-v9';
 const urlsToCache = [
     '/',
     '/index.html',
