@@ -132,10 +132,17 @@
                 </div>
 
                 <div class="settings-group">
-                    <h3 class="section-subtitle">Data Management</h3>
-                    <button class="settings-btn btn-export" id="btn-export-csv" style="margin-bottom:8px;">Export log as CSV</button>
-                    <button class="settings-btn" id="btn-force-update" style="margin-bottom:8px;">Force App Update</button>
-                    <button class="settings-btn text-danger-btn" id="btn-wipe-data">Factory Reset & Clear Data</button>
+                    <h3 class="section-subtitle" style="color: var(--danger-color)">System & Data Backup</h3>
+                    <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:12px;">This app is 100% offline. Save a backup to safely transfer your stash to a new phone.</p>
+                    <button class="settings-btn" id="btn-export-csv" style="background: rgba(255,255,255,0.05); color:white;">Download Data as CSV</button>
+                    <div style="display:flex; gap:8px; margin-top:8px;">
+                        <button class="settings-btn" id="btn-backup-json" style="background: var(--primary-color); border:none; text-align:center; flex:1;">Save Backup File</button>
+                        <button class="settings-btn" id="btn-restore-json" style="background: rgba(255,255,255,0.1); border:none; text-align:center; flex:1;">Restore Backup</button>
+                    </div>
+                    <input type="file" id="restore-json-input" accept=".json" style="display:none;">
+
+                    <button class="settings-btn" id="btn-force-update" style="margin-top:24px;">Force App Update (Clear Cache)</button>
+                    <button class="settings-btn" id="btn-wipe-data" style="margin-top: 10px; border-color: var(--danger-color); color: var(--danger-color);">Factory Reset (Delete All Log Data)</button>
                 </div>
                 
                 <div class="app-version">Dose Tracker Super App v2.0</div>

@@ -80,6 +80,11 @@ document.addEventListener('DOMContentLoaded', () => {
         btnExport: document.getElementById('btn-export-csv'),
         btnForceUpdate: document.getElementById('btn-force-update'),
         btnWipe: document.getElementById('btn-wipe-data'),
+        
+        // Backup
+        btnBackupJson: document.getElementById('btn-backup-json'),
+        btnRestoreJson: document.getElementById('btn-restore-json'),
+        restoreJsonInput: document.getElementById('restore-json-input'),
     };
 
     let timerInterval = null;
@@ -670,6 +675,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- SYSTEM EXPORT/WIPE ---
     
+    // Backup & Restore
+    els.btnBackupJson.addEventListener('click', () => {
+        const jsonStr = JSON.stringify(state, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; 
+        a.download = `dose_tracker_backup_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url);
+    });
+
+    els.btnRestoreJson.addEventListener('click', () => {
+        els.restoreJsonInput.click();
+    });
+
+    els.restoreJsonInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const importedState = JSON.parse(event.target.result);
+                if (importedState && Array.isArray(importedState.inventory) && Array.isArray(importedState.history)) {
+                    if(confirm("Confirm restoring backup? This will overwrite your current device data entirely.")) {
+                        state = importedState;
+                        saveData();
+                        alert("Backup restored! App will reload.");
+                        window.location.reload(true);
+                    }
+                } else {
+                    alert("Invalid backup file format.");
+                }
+            } catch (error) {
+                alert("Could not read backup file.");
+            }
+        };
+        reader.readAsText(file);
+        els.restoreJsonInput.value = ""; // reset
+    });
+
     // Camera OCR
     els.btnScanLabel.addEventListener('click', () => {
         if (typeof Tesseract === 'undefined') {
