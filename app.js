@@ -1,331 +1,438 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Application State
+    
+    // --- APP STATE ---
+    const STORAGE_KEY = 'dose_tracker_v2_data';
     let state = {
-        dailyLimit: 30, // Default recommended starting limit
-        dailyTally: 0,
-        currentDate: new Date().toISOString().split('T')[0],
-        lastDoseTime: null, // ISO string
-        stash: {
-            mango: 25.0,
-            sevenOh: 45.0
-        }
+        stash: { mango: 25.0, sevenOh: 45.0 },
+        history: [], // Array of entry objects
+        presets: [
+            { label: '7.5', sub: 'Mango (1/2)', val: 7.5, type: 'mango' },
+            { label: '15', sub: 'Mango (Whole)', val: 15, type: 'mango' },
+            { label: '20', sub: '7-OH (1/4)', val: 20, type: 'sevenOh' },
+            { label: '40', sub: '7-OH (1/2)', val: 40, type: 'sevenOh' },
+            { label: '80', sub: '7-OH (Whole)', val: 80, type: 'sevenOh' }
+        ]
     };
 
-    const CIRCLE_CIRCUMFERENCE = 339.29; // Based on r=54 in CSS
-    let timerInterval = null;
-
-    // DOM Elements
+    // --- DOM ELEMENTS ---
     const els = {
-        limitDisplay: document.getElementById('daily-limit-display'),
-        timeSince: document.getElementById('time-since'),
-        totalEl: document.getElementById('daily-total'),
-        remAmt: document.getElementById('remaining-amount'),
-        remBadge: document.getElementById('remaining-badge'),
-        progCircle: document.getElementById('progress-circle'),
-        histList: document.getElementById('history-list'),
-
-        // Buttons
-        editLimitBtn: document.getElementById('edit-limit-btn'),
-        logBtns: document.querySelectorAll('.log-btn:not(.log-custom-btn)'),
-        customBtn: document.getElementById('custom-log-btn'),
-        clearHistBtn: document.getElementById('clear-history-btn'),
-
-        // Modals
-        limitModal: document.getElementById('limit-modal'),
-        limitInput: document.getElementById('limit-input'),
-        closeLimitBtn: document.getElementById('close-limit-modal'),
-        saveLimitBtn: document.getElementById('save-limit-btn'),
-
-        customModal: document.getElementById('custom-modal'),
-        customInput: document.getElementById('custom-input'),
-        closeCustomBtn: document.getElementById('close-custom-modal'),
-        saveCustomBtn: document.getElementById('save-custom-btn'),
-
-        resetModal: document.getElementById('reset-modal'),
-        closeResetBtn: document.getElementById('close-reset-modal'),
-        confirmResetBtn: document.getElementById('confirm-reset-btn'),
-
-        // Stash Elements
+        navItems: document.querySelectorAll('.nav-item'),
+        views: document.querySelectorAll('.view-section'),
+        headerTitle: document.getElementById('header-title'),
+        safetyBadge: document.getElementById('safety-badge'),
+        
+        // Dashboard
+        dashTotal: document.getElementById('dash-total'),
+        dashTimer: document.getElementById('dash-timer'),
+        presetGrid: document.getElementById('preset-grid'),
         stashMangoVal: document.getElementById('stash-mango-val'),
         stash7ohVal: document.getElementById('stash-7oh-val'),
-        editStashBtn: document.getElementById('edit-stash-btn'),
-        stashModal: document.getElementById('edit-stash-modal'),
-        stashMangoInput: document.getElementById('edit-mango-input'),
-        stash7ohInput: document.getElementById('edit-7oh-input'),
-        closeStashBtn: document.getElementById('close-stash-modal'),
-        saveStashBtn: document.getElementById('save-stash-btn'),
+
+        // Save Modal
+        saveModal: document.getElementById('save-flow-modal'),
+        saveMgInput: document.getElementById('save-mg-input'),
+        saveStashRadios: document.getElementsByName('save_stash_type'),
+        saveMoodInput: document.getElementById('save-mood-input'),
+        saveTimestampDisplay: document.getElementById('save-timestamp-display'),
+        btnCancelSave: document.getElementById('btn-cancel-save'),
+        btnConfirmSave: document.getElementById('btn-confirm-save'),
+
+        // Timeline
+        timelineList: document.getElementById('timeline-list'),
+
+        // Insights
+        ins7day: document.getElementById('ins-7day'),
+        insAvg: document.getElementById('ins-avg'),
+        insGap: document.getElementById('ins-gap'),
+        insCommon: document.getElementById('ins-common'),
+
+        // Settings / Edit Stash
+        btnOpenEditStash: document.getElementById('open-edit-stash'),
+        editStashModal: document.getElementById('edit-stash-modal'),
+        editMangoInput: document.getElementById('edit-mango-input'),
+        edit7ohInput: document.getElementById('edit-7oh-input'),
+        btnCloseStash: document.getElementById('close-stash-modal'),
+        btnSaveStash: document.getElementById('save-stash-btn'),
+
+        // Export/Wipe
+        btnExport: document.getElementById('btn-export-csv'),
+        btnForceUpdate: document.getElementById('btn-force-update'),
+        btnWipe: document.getElementById('btn-wipe-data'),
     };
 
-    // --- Initialization ---
-    loadData();
-    updateUI();
-    startTimer();
+    let timerInterval = null;
 
-    // --- Event Listeners ---
-    els.logBtns.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            // Find closest log-btn in case click was on child element (span)
-            const el = e.target.closest('.log-btn');
-            const amt = parseFloat(el.dataset.amount);
-            const stashType = el.dataset.stash;
-            logDose(amt, stashType);
-        });
-    });
-
-    els.clearHistBtn.addEventListener('click', () => {
-        els.resetModal.classList.remove('hidden');
-    });
-
-    els.closeResetBtn.addEventListener('click', () => els.resetModal.classList.add('hidden'));
-
-    els.confirmResetBtn.addEventListener('click', () => {
-        const todayLogs = getHistory().filter(h => h.date !== state.currentDate);
-        localStorage.setItem('7oh_history', JSON.stringify(todayLogs));
-        state.dailyTally = 0;
-        state.lastDoseTime = null;
-        saveData();
-        updateUI();
-        updateTimerText();
-        els.resetModal.classList.add('hidden');
-    });
-
-    // Modals
-    els.editLimitBtn.addEventListener('click', () => {
-        els.limitInput.value = state.dailyLimit;
-        els.limitModal.classList.remove('hidden');
-    });
-    els.closeLimitBtn.addEventListener('click', () => els.limitModal.classList.add('hidden'));
-    els.saveLimitBtn.addEventListener('click', () => {
-        const val = parseFloat(els.limitInput.value);
-        if (val > 0) {
-            state.dailyLimit = val;
-            saveData();
-            updateUI();
-            els.limitModal.classList.add('hidden');
-        }
-    });
-
-    els.customBtn.addEventListener('click', () => {
-        els.customInput.value = '';
-        els.customModal.classList.remove('hidden');
-        setTimeout(() => els.customInput.focus(), 100);
-    });
-    els.closeCustomBtn.addEventListener('click', () => els.customModal.classList.add('hidden'));
-    els.saveCustomBtn.addEventListener('click', () => {
-        const val = parseFloat(els.customInput.value);
-        const selectedStashInfo = document.querySelector('input[name="custom_stash_type"]:checked');
-        const stashType = selectedStashInfo ? selectedStashInfo.value : null;
-
-        if (val > 0) {
-            logDose(val, stashType);
-            els.customModal.classList.add('hidden');
-        }
-    });
-
-    els.editStashBtn.addEventListener('click', () => {
-        els.stashMangoInput.value = state.stash.mango;
-        els.stash7ohInput.value = state.stash.sevenOh;
-        els.stashModal.classList.remove('hidden');
-    });
-
-    els.closeStashBtn.addEventListener('click', () => els.stashModal.classList.add('hidden'));
-
-    els.saveStashBtn.addEventListener('click', () => {
-        const newMango = parseFloat(els.stashMangoInput.value);
-        const new7oh = parseFloat(els.stash7ohInput.value);
-
-        if (!isNaN(newMango) && newMango >= 0) state.stash.mango = newMango;
-        if (!isNaN(new7oh) && new7oh >= 0) state.stash.sevenOh = new7oh;
-
-        saveData();
-        updateUI();
-        els.stashModal.classList.add('hidden');
-    });
-
-    // --- Core Logic ---
-    function logDose(amount, stashType = null) {
-        // Haptic feedback if available (works on some mobile browsers)
-        if (navigator.vibrate) navigator.vibrate(50);
-
-        state.dailyTally += amount;
-
-        const now = new Date();
-        state.lastDoseTime = now.toISOString();
-
-        // Calculate stash deduction based on tablet mg sizes
-        if (stashType === 'mango') {
-            const pillsTaken = amount / 15.0; // Mango is 15mg per pill
-            state.stash.mango = Math.max(0, state.stash.mango - pillsTaken);
-        } else if (stashType === 'sevenOh') {
-            const pillsTaken = amount / 80.0; // 7-OH is 80mg per pill
-            state.stash.sevenOh = Math.max(0, state.stash.sevenOh - pillsTaken);
+    // --- INITIALIZATION ---
+    function init() {
+        // V2 Wipe Protection: Check if old schema exists and clean it up
+        if (localStorage.getItem('7oh_history') || localStorage.getItem('7oh_taper_state')) {
+            localStorage.removeItem('7oh_history');
+            localStorage.removeItem('7oh_taper_state');
         }
 
-        // Save history entry
-        const history = getHistory();
-        history.push({
-            id: Date.now(),
-            date: state.currentDate,
-            timestamp: now.toISOString(),
-            amount: amount,
-            stash: stashType
-        });
-        localStorage.setItem('7oh_history', JSON.stringify(history));
-
-        saveData();
-        updateUI();
-        updateTimerText();
-    }
-
-    function checkDayWrap() {
-        const today = new Date().toISOString().split('T')[0];
-        if (state.currentDate !== today) {
-            state.currentDate = today;
-            state.dailyTally = 0;
-            saveData();
-        }
-    }
-
-    function loadData() {
-        const saved = localStorage.getItem('7oh_taper_state');
+        const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                state = { ...state, ...parsed };
-            } catch (e) {
-                console.error("Failed to parse state", e);
-            }
+            try { state = JSON.parse(saved); } catch (e) { console.error("Corrupted save data."); }
         }
-        checkDayWrap();
 
-        // Try to migrate data from the old app version if it exists
-        const oldState = localStorage.getItem('7oh_state');
-        if (oldState && !saved) {
-            try {
-                const parsed = JSON.parse(oldState);
-                if (parsed.currentDate === state.currentDate && parsed.dailyTally) {
-                    state.dailyTally = parsed.dailyTally;
-                }
-            } catch (e) { }
-        }
+        buildPresets();
+        updateUI();
+        startTimer();
     }
 
     function saveData() {
-        localStorage.setItem('7oh_taper_state', JSON.stringify(state));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
 
-    function getHistory() {
-        const h = localStorage.getItem('7oh_history');
-        return h ? JSON.parse(h) : [];
+    // --- NAVIGATION LOGIC ---
+    els.navItems.forEach(nav => {
+        nav.addEventListener('click', () => {
+            // Update active icon
+            els.navItems.forEach(n => n.classList.remove('active'));
+            nav.classList.add('active');
+
+            // Switch view
+            const targetId = nav.dataset.target;
+            els.views.forEach(v => v.classList.remove('active-view'));
+            document.getElementById(targetId).classList.add('active-view');
+
+            // Update Header
+            els.headerTitle.textContent = nav.querySelector('span').textContent;
+
+            // Render specific tab needs
+            if (targetId === 'view-timeline') renderTimeline();
+            if (targetId === 'view-insights') calcInsights();
+        });
+    });
+
+    // --- DASHBOARD / QUICK LOGGING ---
+    function buildPresets() {
+        els.presetGrid.innerHTML = '';
+        state.presets.forEach(p => {
+            const btn = document.createElement('div');
+            btn.className = 'preset-btn';
+            btn.innerHTML = `<span class="preset-val">${p.label}</span><span class="preset-lbl">${p.sub}</span>`;
+            btn.addEventListener('click', () => openSaveModal(p.val, p.type));
+            els.presetGrid.appendChild(btn);
+        });
+
+        // Add Custom Button
+        const customBtn = document.createElement('div');
+        customBtn.className = 'preset-btn custom-btn';
+        customBtn.innerHTML = `<span class="preset-val">+</span><span class="preset-lbl">Custom</span>`;
+        customBtn.addEventListener('click', () => openSaveModal('', 'other'));
+        els.presetGrid.appendChild(customBtn);
     }
 
-    // --- Timer Logic ---
+    function openSaveModal(amount, stashType) {
+        if (navigator.vibrate) navigator.vibrate(50);
+        els.saveMgInput.value = amount;
+        els.saveMoodInput.value = 3; // Reset default
+        
+        // Auto select radio
+        Array.from(els.saveStashRadios).forEach(radio => {
+            radio.checked = (radio.value === stashType);
+        });
+
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        els.saveTimestampDisplay.textContent = `Today @ ${timeStr}`;
+
+        els.saveModal.classList.remove('hidden');
+        if (amount === '') {
+            setTimeout(() => els.saveMgInput.focus(), 100);
+        }
+    }
+
+    els.btnCancelSave.addEventListener('click', () => els.saveModal.classList.add('hidden'));
+
+    els.btnConfirmSave.addEventListener('click', () => {
+        const amtStr = els.saveMgInput.value;
+        if (!amtStr || isNaN(amtStr) || parseFloat(amtStr) <= 0) {
+            alert("Please enter a valid amount.");
+            return;
+        }
+
+        const amt = parseFloat(amtStr);
+        const selectedRadio = Array.from(els.saveStashRadios).find(r => r.checked);
+        const stashType = selectedRadio ? selectedRadio.value : 'other';
+        const mood = parseInt(els.saveMoodInput.value);
+
+        const now = new Date();
+
+        // Stash Deduction Math
+        if (stashType === 'mango') state.stash.mango = Math.max(0, state.stash.mango - (amt / 15.0));
+        if (stashType === 'sevenOh') state.stash.sevenOh = Math.max(0, state.stash.sevenOh - (amt / 80.0));
+
+        // Create log entry
+        const entry = {
+            id: Date.now(),
+            timestamp: now.toISOString(),
+            amount: amt,
+            product: stashType,
+            mood: mood
+        };
+
+        state.history.push(entry);
+        saveData();
+        
+        els.saveModal.classList.add('hidden');
+        updateUI();
+        startTimer(); // Reset timer instantly
+    });
+
+    // --- TIMELINE ---
+    function renderTimeline() {
+        els.timelineList.innerHTML = '';
+        if (state.history.length === 0) {
+            els.timelineList.innerHTML = '<li style="text-align:center; color:var(--text-secondary); margin-top:20px;">No entries logged yet.</li>';
+            return;
+        }
+
+        // Clone and reverse so newest is on top
+        const reversed = [...state.history].reverse();
+        
+        let lastDateLabel = "";
+
+        reversed.forEach(entry => {
+            const d = new Date(entry.timestamp);
+            const dateStr = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+            const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+            
+            // Insert Date Dividers
+            if (dateStr !== lastDateLabel) {
+                const divider = document.createElement('div');
+                divider.style.fontSize = "0.8rem";
+                divider.style.color = "var(--text-secondary)";
+                divider.style.fontWeight = "600";
+                divider.style.marginTop = "10px";
+                divider.style.textTransform = "uppercase";
+                divider.textContent = dateStr;
+                els.timelineList.appendChild(divider);
+                lastDateLabel = dateStr;
+            }
+
+            const li = document.createElement('li');
+            li.className = 'entry-card';
+
+            const prodLabel = entry.product === 'mango' ? 'Mango (15mg)' : entry.product === 'sevenOh' ? '7-OH (80mg)' : 'Other';
+            const prodClass = entry.product === 'mango' ? 'prod-mango' : entry.product === 'sevenOh' ? 'prod-7oh' : 'prod-other';
+
+            // Smiley parsing
+            const moodEmoji = ['😖','😟','😐','🙂','😁'][entry.mood - 1] || '😐';
+
+            li.innerHTML = `
+                <div class="entry-header">
+                    <span class="entry-time">${timeStr} &nbsp; <span style="font-size:1.1rem">${moodEmoji}</span></span>
+                    <span class="entry-amount">+${formatNum(entry.amount)}<span style="font-size:0.9rem;color:var(--text-secondary)">mg</span></span>
+                </div>
+                <div class="entry-footer">
+                    <span class="entry-product ${prodClass}">${prodLabel}</span>
+                    <button class="btn-delete-entry" data-id="${entry.id}">Delete</button>
+                </div>
+            `;
+            els.timelineList.appendChild(li);
+        });
+
+        // Bind deletes
+        document.querySelectorAll('.btn-delete-entry').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if (confirm("Delete this entry entirely?")) {
+                    const id = parseInt(e.target.dataset.id);
+                    state.history = state.history.filter(h => h.id !== id);
+                    saveData();
+                    renderTimeline(); // re-render
+                    updateUI(); // re-calc dash
+                }
+            });
+        });
+    }
+
+    // --- INSIGHTS ENGINE ---
+    function calcInsights() {
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        const last7DaysStr = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+        let totalToday = 0;
+        let total7Days = 0;
+        let countToday = 0;
+        let todayTimestamps = [];
+        let mgFrequencies = {};
+
+        state.history.forEach(entry => {
+            const eDate = entry.timestamp.split('T')[0];
+            
+            // Mode calc
+            mgFrequencies[entry.amount] = (mgFrequencies[entry.amount] || 0) + 1;
+
+            if (eDate === todayStr) {
+                totalToday += entry.amount;
+                countToday++;
+                todayTimestamps.push(new Date(entry.timestamp).getTime());
+            }
+
+            if (entry.timestamp >= last7DaysStr) {
+                total7Days += entry.amount;
+            }
+        });
+
+        // 7 Day and Avg
+        els.ins7day.textContent = formatNum(total7Days);
+        els.insAvg.textContent = formatNum(total7Days / 7.0);
+
+        // Gap calculation
+        if (todayTimestamps.length > 1) {
+            // Sort ascending
+            todayTimestamps.sort((a,b) => a-b);
+            let diffSum = 0;
+            for(let i=1; i<todayTimestamps.length; i++){
+                diffSum += (todayTimestamps[i] - todayTimestamps[i-1]);
+            }
+            const avgDiff = diffSum / (todayTimestamps.length - 1);
+            els.insGap.textContent = formatDuration(avgDiff);
+        } else {
+            els.insGap.textContent = "N/A";
+        }
+
+        // Mode calculation
+        let modeMg = 0;
+        let maxCount = 0;
+        for (const amt in mgFrequencies) {
+            if (mgFrequencies[amt] > maxCount) {
+                maxCount = mgFrequencies[amt];
+                modeMg = amt;
+            }
+        }
+        els.insCommon.textContent = modeMg;
+
+        // Safety Warnings on Header
+        if (totalToday > (total7Days / 7.0) && countToday > 1) {
+            els.safetyBadge.textContent = "Trending High";
+            els.safetyBadge.classList.remove('hidden');
+        } else {
+            els.safetyBadge.classList.add('hidden');
+        }
+    }
+
+    // --- UI RENDERING & TIMERS ---
+    function updateUI() {
+        if (!state.stash) state.stash = {mango:0, sevenOh:0};
+        
+        els.stashMangoVal.textContent = formatNum(state.stash.mango);
+        els.stash7ohVal.textContent = formatNum(state.stash.sevenOh);
+
+        const nowStr = new Date().toISOString().split('T')[0];
+        let dashTally = 0;
+        state.history.forEach(h => {
+             if (h.timestamp.split('T')[0] === nowStr) dashTally += h.amount;
+        });
+        els.dashTotal.textContent = formatNum(dashTally);
+        
+        calcInsights(); // silent compute for safety badge
+    }
+
     function startTimer() {
         updateTimerText();
         if (timerInterval) clearInterval(timerInterval);
-        timerInterval = setInterval(updateTimerText, 60000); // UI updates every minute
+        timerInterval = setInterval(updateTimerText, 60000);
     }
 
     function updateTimerText() {
-        if (!state.lastDoseTime) {
-            els.timeSince.textContent = "No data";
+        if (state.history.length === 0) {
+            els.dashTimer.textContent = "No data";
             return;
         }
 
-        const lastTime = new Date(state.lastDoseTime).getTime();
-        const now = new Date().getTime();
-        const diffMs = now - lastTime;
-
-        if (diffMs < 0) {
-            els.timeSince.textContent = "Just now";
-            return;
-        }
-
-        const hrs = Math.floor(diffMs / (1000 * 60 * 60));
-        const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-        if (hrs > 24) {
-            const days = Math.floor(hrs / 24);
-            els.timeSince.textContent = `${days}d ${hrs % 24}h`;
-        } else {
-            els.timeSince.textContent = `${hrs}h ${mins}m`;
-        }
+        // Get very last entry time
+        const lastTime = new Date(state.history[state.history.length - 1].timestamp).getTime();
+        const diffMs = new Date().getTime() - lastTime;
+        
+        els.dashTimer.textContent = formatDuration(diffMs);
     }
 
-    // --- UI Rendering ---
-    function updateUI() {
-        // Format Tally
-        const formattedTally = state.dailyTally % 1 === 0 ? state.dailyTally : state.dailyTally.toFixed(1);
-        els.totalEl.textContent = formattedTally;
-        els.limitDisplay.innerHTML = `${state.dailyLimit}<span class="unit">mg</span>`;
+    // --- SETTINGS / MODALS ---
+    els.btnOpenEditStash.addEventListener('click', () => {
+        els.editMangoInput.value = formatNum(state.stash.mango);
+        els.edit7ohInput.value = formatNum(state.stash.sevenOh);
+        els.editStashModal.classList.remove('hidden');
+    });
 
-        // Update Stash UI
-        if (state.stash) {
-            els.stashMangoVal.textContent = state.stash.mango % 1 === 0 ? state.stash.mango : state.stash.mango.toFixed(2);
-            els.stash7ohVal.textContent = state.stash.sevenOh % 1 === 0 ? state.stash.sevenOh : state.stash.sevenOh.toFixed(2);
-        }
+    els.btnCloseStash.addEventListener('click', () => els.editStashModal.classList.add('hidden'));
 
-        // Calculate progress ring and values
-        const remaining = Math.max(0, state.dailyLimit - state.dailyTally);
-        els.remAmt.textContent = remaining % 1 === 0 ? remaining : remaining.toFixed(1);
+    els.btnSaveStash.addEventListener('click', () => {
+        const nm = parseFloat(els.editMangoInput.value);
+        const ns = parseFloat(els.edit7ohInput.value);
+        if (!isNaN(nm) && nm >= 0) state.stash.mango = nm;
+        if (!isNaN(ns) && ns >= 0) state.stash.sevenOh = ns;
+        saveData();
+        updateUI();
+        els.editStashModal.classList.add('hidden');
+    });
 
-        const percent = Math.min(100, Math.max(0, (state.dailyTally / state.dailyLimit) * 100));
-        const offset = CIRCLE_CIRCUMFERENCE - (percent / 100) * CIRCLE_CIRCUMFERENCE;
-        els.progCircle.style.strokeDashoffset = offset;
+    els.btnExport.addEventListener('click', () => {
+        if (state.history.length === 0) return alert("Nothing to export yet.");
+        let csv = "Date,Time,Amount_mg,Product,Mood_1_to_5\n";
+        state.history.forEach(h => {
+            const d = new Date(h.timestamp);
+            const dStr = d.toLocaleDateString();
+            const tStr = d.toLocaleTimeString();
+            csv += `"${dStr}","${tStr}",${h.amount},"${h.product}",${h.mood}\n`;
+        });
+        
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `dose_tracker_export_${new Date().getTime()}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+    });
 
-        // Visual warnings based on progress
-        els.progCircle.classList.remove('ring-warning', 'ring-danger');
-        els.remBadge.classList.remove('badge-warning', 'badge-danger');
-
-        if (percent >= 100) {
-            els.progCircle.classList.add('ring-danger');
-            els.remBadge.classList.add('badge-danger');
-        } else if (percent >= 80) {
-            els.progCircle.classList.add('ring-warning');
-            els.remBadge.classList.add('badge-warning');
-        }
-
-        // Render History for Today
-        const history = getHistory().filter(h => h.date === state.currentDate);
-        els.histList.innerHTML = '';
-
-        if (history.length === 0) {
-            els.histList.innerHTML = '<li class="history-item history-empty">No doses logged today. Keep going!</li>';
-        } else {
-            [...history].reverse().forEach(entry => {
-                const li = document.createElement('li');
-                li.className = 'history-item';
-
-                const entryDate = new Date(entry.timestamp);
-                const timeStr = entryDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-
-                const dateSpan = document.createElement('span');
-                dateSpan.className = 'hist-time';
-                dateSpan.textContent = timeStr;
-
-                const amtSpan = document.createElement('span');
-                amtSpan.className = 'hist-amt';
-
-                // Add tiny visual indicator of stash type to the history log
-                let stashLabel = '';
-                if (entry.stash === 'mango') stashLabel = '<span style="color:#f59e0b;font-size:0.75rem;margin-right:6px">Mango</span>';
-                if (entry.stash === 'sevenOh') stashLabel = '<span style="color:#8b5cf6;font-size:0.75rem;margin-right:6px">7-OH</span>';
-
-                amtSpan.innerHTML = `${stashLabel}+${entry.amount % 1 === 0 ? entry.amount : entry.amount.toFixed(1)} mg`;
-
-                li.appendChild(dateSpan);
-                li.appendChild(amtSpan);
-                els.histList.appendChild(li);
+    els.btnForceUpdate.addEventListener('click', () => {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                for(let registration of registrations) {
+                    registration.unregister();
+                }
             });
         }
+        alert("Cache cleared. The app will now reload.");
+        window.location.reload(true);
+    });
+
+    els.btnWipe.addEventListener('click', () => {
+        if(confirm("CRITICAL WARNING: This will delete ALL history and stash counts permanently. Are you absolutely sure?")) {
+            localStorage.removeItem(STORAGE_KEY);
+            alert("App Factory Reset Complete. Refreshing...");
+            window.location.reload();
+        }
+    });
+
+    // --- UTILS ---
+    function formatNum(n) {
+        return n % 1 === 0 ? n : parseFloat(n).toFixed(2);
     }
 
-    // Register Service Worker mapping to Version 3 to ensure aggressive cache invalidation of the old UI
+    function formatDuration(ms) {
+        if (ms < 60000) return "Just now";
+        const hrs = Math.floor(ms / (1000 * 60 * 60));
+        const mins = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+        
+        if (hrs > 24) {
+             const days = Math.floor(hrs / 24);
+             return `${days}d ${hrs % 24}h`;
+        }
+        return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+    }
+
+    init();
+
+    // Register Service Worker map
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('sw.js').catch(err => {
-                console.log('SW Registration failed: ', err);
-            });
+            navigator.serviceWorker.register('sw.js');
         });
     }
 });
