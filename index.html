@@ -179,7 +179,15 @@
 
             <!-- Form to Add New Product -->
             <div style="background: rgba(255,255,255,0.05); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
-                <h4 style="font-size: 0.9rem; margin-bottom: 8px; color: var(--primary-color);">+ Add New Product Type</h4>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <h4 style="font-size: 0.9rem; color: var(--primary-color);">+ Add New Product Type</h4>
+                    <!-- Hidden Camera Input -->
+                    <input type="file" id="camera-input" accept="image/*" capture="environment" style="display:none;">
+                    <button id="btn-scan-label" style="background:var(--surface-color); border:1px solid var(--primary-color); color:var(--primary-color); padding:4px 8px; border-radius:8px; font-size:0.75rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:4px;">
+                        📷 Scan Label
+                    </button>
+                </div>
+
                 <div class="input-group" style="margin-bottom: 8px;">
                     <label>Product Name</label>
                     <input type="text" id="new-prod-name" placeholder="e.g. Green Vein">
@@ -203,6 +211,7 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

@@ -59,6 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
         newProdCount: document.getElementById('new-prod-count'),
         btnAddProduct: document.getElementById('btn-add-product'),
         btnCloseStash: document.getElementById('close-stash-modal'),
+        btnScanLabel: document.getElementById('btn-scan-label'),
+        cameraInput: document.getElementById('camera-input'),
 
         // Export/Wipe
         btnExport: document.getElementById('btn-export-csv'),
@@ -521,6 +523,46 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- SYSTEM EXPORT/WIPE ---
+    
+    // Camera OCR
+    els.btnScanLabel.addEventListener('click', () => {
+        if (typeof Tesseract === 'undefined') {
+            return alert("Scanner engine is still downloading in the background. Check your airplane mode or try again in a few seconds.");
+        }
+        els.cameraInput.click();
+    });
+
+    els.cameraInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        els.btnScanLabel.textContent = "⏳ Scanning...";
+        els.btnScanLabel.disabled = true;
+
+        try {
+            const { data: { text } } = await Tesseract.recognize(file, 'eng');
+            
+            // Console log to help user debug their bottle text
+            console.log("OCR Result Block: ", text);
+
+            const mgMatch = text.match(/([\d.]+)\s*(mg|milligram)/i);
+            if (mgMatch) els.newProdMg.value = mgMatch[1];
+
+            const countMatch = text.match(/([\d]+)\s*(capsules|caps|tablets|tabs|pills|count|ct)/i);
+            if (countMatch) els.newProdCount.value = countMatch[1];
+
+            alert("Scan complete! I found some numbers. Please fill in the Product Name manually.");
+            els.newProdName.focus();
+        } catch (error) {
+            console.error(error);
+            alert("Scanner error. Please input manually.");
+        } finally {
+            els.btnScanLabel.textContent = "📷 Scan Label";
+            els.btnScanLabel.disabled = false;
+            els.cameraInput.value = "";
+        }
+    });
+
     els.btnExport.addEventListener('click', () => {
         if (state.history.length === 0) return alert("Nothing to export yet.");
         let csv = "Date,Time,Amount_mg,ProductID,Mood_1_to_5\n";
