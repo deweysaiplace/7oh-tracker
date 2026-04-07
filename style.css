@@ -200,6 +200,15 @@ body {
     border-style: dashed;
     background: transparent;
 }
+.voice-btn {
+    background: rgba(59, 130, 246, 0.1);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+.voice-btn:active {
+    background: rgba(59, 130, 246, 0.2);
+}
+.voice-btn .preset-val { font-size: 1.8rem; }
 
 
 /* Timeline */

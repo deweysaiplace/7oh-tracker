@@ -122,6 +122,86 @@ document.addEventListener('DOMContentLoaded', () => {
         customBtn.innerHTML = `<span class="preset-val">+</span><span class="preset-lbl">Custom</span>`;
         customBtn.addEventListener('click', () => openSaveModal('', 'other'));
         els.presetGrid.appendChild(customBtn);
+
+        // Add Voice Button
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            const voiceBtn = document.createElement('div');
+            voiceBtn.className = 'preset-btn voice-btn';
+            voiceBtn.innerHTML = `<span class="preset-val">🎤</span><span class="preset-lbl">Voice</span>`;
+            voiceBtn.addEventListener('click', startVoiceDictation);
+            els.presetGrid.appendChild(voiceBtn);
+        }
+    }
+
+    // --- VOICE TO LOG PARSER ---
+    function startVoiceDictation() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) return alert("Voice recognition not supported on this browser.");
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        // Visual feedback
+        els.headerTitle.textContent = "🎙️ Listening...";
+
+        recognition.onresult = (event) => {
+            const speechResult = event.results[0][0].transcript.toLowerCase();
+            els.headerTitle.textContent = "Dashboard";
+            
+            // Default assumes other
+            let productStr = 'other';
+            let amountVal = '';
+            
+            // 1. Identify Product
+            if (speechResult.includes('mango')) {
+                productStr = 'mango';
+            } else if (speechResult.match(/7[-\s]?oh/) || speechResult.match(/seven[-\s]?oh/) || speechResult.includes('tab')) {
+                productStr = 'sevenOh';
+            }
+
+            // 2. Identify Amount
+            // Look for explicit milligrams first e.g. "ten milligrams"
+            const mgMatch = speechResult.match(/(\d+(\.\d+)?)\s*(mg|milligram)/);
+            if (mgMatch) {
+                amountVal = parseFloat(mgMatch[1]);
+            } else {
+                // Look for fractions relative to the product 
+                // Base size logic: Mango=15mg, 7OH=80mg
+                let baseSize = 80; // defaults to 7OH tab size if unknown
+                if (productStr === 'mango') baseSize = 15;
+                if (productStr === 'sevenOh') baseSize = 80;
+
+                let multiplier = 0;
+                if (speechResult.match(/quarter|1\/4/)) multiplier = 0.25;
+                if (speechResult.match(/half|1\/2/)) multiplier = 0.5;
+                if (speechResult.match(/whole|full/)) multiplier = 1.0;
+
+                if (multiplier > 0) {
+                    amountVal = baseSize * multiplier;
+                }
+            }
+
+            // Open the save modal with pre-filled translated data
+            openSaveModal(amountVal, productStr);
+        };
+
+        recognition.onspeechend = () => {
+            recognition.stop();
+            els.headerTitle.textContent = "Dashboard";
+        };
+
+        recognition.onerror = (event) => {
+            console.error(event.error);
+            els.headerTitle.textContent = "Dashboard";
+            alert("Error recognizing voice: " + event.error);
+        };
+
+        try {
+            recognition.start();
+        } catch(e) { /* already started */ }
     }
 
     function openSaveModal(amount, stashType) {
