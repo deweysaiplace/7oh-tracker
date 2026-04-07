@@ -548,7 +548,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const mgMatch = text.match(/([\d.]+)\s*(mg|milligram)/i);
             if (mgMatch) els.newProdMg.value = mgMatch[1];
 
-            const countMatch = text.match(/([\d]+)\s*(capsules|caps|tablets|tabs|pills|count|ct)/i);
+            const countMatch = text.match(/([\d]+)\s*(capsules|caps|tablets|tabs|pills|count|ct|gummies|pieces|pcs)/i);
             if (countMatch) els.newProdCount.value = countMatch[1];
 
             alert("Scan complete! I found some numbers. Please fill in the Product Name manually.");
